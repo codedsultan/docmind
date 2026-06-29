@@ -1,0 +1,91 @@
+---
+# playbooks/deploy.yml
+#
+# Mirrors x-infra-node's deploy.yml shape (this is a standalone app repo,
+# not the multi-app x-infra registry — it writes its own Caddy route).
+#
+# Run with:
+#   ansible-playbook playbooks/deploy.yml -e deploy_env=staging -e TAG=<sha>
+#   ansible-playbook playbooks/deploy.yml -i inventories/production -e deploy_env=production -e TAG=<sha>
+
+- name: Deploy InnerMind
+  hosts: all
+  gather_facts: false
+
+  pre_tasks:
+    - name: Run local preflight checks
+      delegate_to: localhost
+      connection: local
+      run_once: true
+      become: false
+      ansible.builtin.command: ./scripts/preflight.sh
+      args:
+        chdir: "{{ playbook_dir }}/.."
+
+    - name: Assert deploy_env is valid
+      ansible.builtin.assert:
+        that:
+          - deploy_env in ["staging", "production"]
+        fail_msg: "deploy_env must be 'staging' or 'production'"
+
+    - name: Assert app config is present
+      ansible.builtin.assert:
+        that:
+          - app is defined
+          - app.innermind is defined
+          - app.runtime is defined
+          - app.runtime.services is defined
+        fail_msg: "app config missing or incomplete — check inventories/{{ deploy_env }}/group_vars/all/app.yml"
+
+    - name: Assert TAG was provided
+      ansible.builtin.assert:
+        that:
+          - TAG is defined
+          - TAG | length > 0
+        fail_msg: "You must pass -e TAG=<image-tag> (the tag built & pushed by CI)"
+
+  tasks:
+    # 1) Generate .env file consumed by the api service
+    - name: Generate .env file
+      ansible.builtin.include_role:
+        name: app_env_innermind
+
+    # 2) Render compose, pull images, bring up stack, run migrations/seeds,
+    #    wait for the api service to report healthy
+    - name: Deploy app runtime
+      ansible.builtin.include_role:
+        name: app_runtime_innermind
+
+    # 3) Write Caddy route — public domain → web service
+    - name: Write Caddy route
+      ansible.builtin.copy:
+        dest: "{{ proxy_base_dir }}/apps/innermind-{{ deploy_env }}.caddy"
+        mode: "0644"
+        content: |
+          {{ app.domains[deploy_env] | join(", ") }} {
+            reverse_proxy innermind-{{ deploy_env }}-{{ app.public_service }}:{{ app.public_service_port }}
+          }
+
+    - name: Reload Caddy
+      ansible.builtin.command: docker exec {{ caddy.container_name }} caddy reload --config /etc/caddy/Caddyfile
+      changed_when: true
+
+    # 4) Verify the public domain is actually reachable end-to-end
+    - name: Verify app is reachable via public domain
+      ansible.builtin.uri:
+        url: "https://{{ app.domains[deploy_env][0] }}{{ app.caddy_verify_path | default('/') }}"
+        method: GET
+        return_content: false
+        status_code: [200, 301, 302, 401, 403, 404]
+        validate_certs: false
+      register: health_check
+      retries: 12
+      delay: 5
+      until: health_check.status in [200, 301, 302, 401, 403, 404]
+
+    - name: Deploy summary
+      ansible.builtin.debug:
+        msg:
+          - "✅ innermind deployed to {{ deploy_env }}"
+          - "Tag: {{ TAG }}"
+          - "Domain: https://{{ app.domains[deploy_env][0] }}"

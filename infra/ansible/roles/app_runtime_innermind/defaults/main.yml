@@ -1,0 +1,10 @@
+---
+innermind_api_service_name: "api"
+innermind_health_port: 4000
+innermind_health_endpoint: "/health/ready"
+innermind_health_enabled: true
+innermind_health_retries: 20
+innermind_health_delay: 5
+innermind_run_migrate: true
+innermind_run_seed: true
+innermind_require_env: true

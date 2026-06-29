@@ -1,0 +1,120 @@
+---
+# roles/app_env_innermind/tasks/main.yml
+#
+# Builds the .env file consumed by the api service container.
+# Layer order: base → derived → db → secrets (later layers win on conflict).
+# Mirrors roles/app_env_node and roles/app_env_go_kutt in x-infra/x-infra-node.
+
+- name: Set app directory paths
+  ansible.builtin.set_fact:
+    app_dir: "{{ apps_base_dir }}/innermind-{{ deploy_env }}"
+    env_path: "{{ apps_base_dir }}/innermind-{{ deploy_env }}/{{ env_filename }}"
+
+- name: Ensure app directory exists
+  ansible.builtin.file:
+    path: "{{ app_dir }}"
+    state: directory
+    mode: "0755"
+
+# ---- Base + derived env -------------------------------------------------------
+
+- name: Set base env
+  ansible.builtin.set_fact:
+    env_base: "{{ app.env.base | default({}) }}"
+
+- name: Set derived env
+  ansible.builtin.set_fact:
+    env_derived: "{{ app.env.derived | default({}) }}"
+
+# ---- Database env (Postgres, PG_* vars — matches backend/src/config) ---------
+
+- name: Init empty db env
+  ansible.builtin.set_fact:
+    env_db: {}
+
+- name: Assert DB password var is set
+  ansible.builtin.assert:
+    that:
+      - app.db.password_var is defined
+      - (lookup('vars', app.db.password_var, default='') | string | length) > 0
+    fail_msg: "Missing DB password var '{{ app.db.password_var }}' in vault"
+  when: app.db is defined
+  no_log: true
+
+- name: Build PG_* vars (postgres)
+  ansible.builtin.set_fact:
+    env_db:
+      PG_HOST: "{{ app.db.host }}"
+      PG_PORT: "{{ app.db.port | string }}"
+      PG_DATABASE: "{{ app.db.name }}"
+      PG_USER: "{{ app.db.user }}"
+      PG_PASSWORD: "{{ lookup('vars', app.db.password_var) }}"
+  when:
+    - app.db is defined
+    - app.db.engine == "postgres"
+  no_log: true
+
+# ---- Secrets -------------------------------------------------------------
+
+- name: Init secrets env
+  ansible.builtin.set_fact:
+    env_secrets: {}
+  no_log: true
+
+- name: Resolve required secrets
+  ansible.builtin.set_fact:
+    env_secrets: "{{ env_secrets | combine({ item.key: lookup('vars', item.value) }) }}"
+  loop: "{{ app.env.secret_map | default({}) | dict2items }}"
+  when: (lookup('vars', item.value, default='') | string | length) > 0
+  no_log: true
+
+- name: Fail if required secret is missing
+  ansible.builtin.fail:
+    msg: "Required secret '{{ item.value }}' (for {{ item.key }}) is missing from vault"
+  loop: "{{ app.env.secret_map | default({}) | dict2items }}"
+  when: (lookup('vars', item.value, default='') | string | length) == 0
+  no_log: true
+
+- name: Resolve optional secrets
+  ansible.builtin.set_fact:
+    env_secrets: "{{ env_secrets | combine({ item.key: lookup('vars', item.value) }) }}"
+  loop: "{{ app.env.secret_map_optional | default({}) | dict2items }}"
+  when: (lookup('vars', item.value, default='') | string | length) > 0
+  no_log: true
+
+# ---- Merge & validate ------------------------------------------------------
+
+- name: Merge all env layers (base → derived → db → secrets)
+  ansible.builtin.set_fact:
+    env_merged: >-
+      {{
+        (env_base | default({}))
+        | combine((env_derived | default({})), recursive=True)
+        | combine((env_db | default({})), recursive=True)
+        | combine((env_secrets | default({})), recursive=True)
+      }}
+  no_log: true
+
+- name: Validate required keys are present and non-empty
+  ansible.builtin.assert:
+    that:
+      - env_merged[item] is defined
+      - (env_merged[item] | string | length) > 0
+    fail_msg: "Required .env key '{{ item }}' is missing or empty"
+  loop: "{{ app.env.required_keys | default([]) }}"
+  when: env_fail_on_empty_required
+  no_log: true
+
+- name: Write .env file
+  ansible.builtin.template:
+    src: innermind.env.j2
+    dest: "{{ env_path }}"
+    owner: "{{ env_owner }}"
+    group: "{{ env_group }}"
+    mode: "{{ env_mode }}"
+  no_log: true
+
+- name: Export env_path for other roles
+  ansible.builtin.set_fact:
+    env_file_path: "{{ env_path }}"
+    cacheable: true

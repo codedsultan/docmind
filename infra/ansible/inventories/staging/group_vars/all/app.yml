@@ -1,0 +1,122 @@
+---
+# -----------------------------------------------------------------------
+# InnerMind app definition — NestJS API + Next.js web, single deploy unit.
+#
+# Modeled on x-infra's go-kutt pattern: one app entry, two separately
+# built/pushed Docker images (api, web), Caddy routes the public domain
+# to the web service, web talks to api over the internal cluster network.
+# -----------------------------------------------------------------------
+app:
+  # registry_profile matches vault_registries in foundation.yml
+  registry_profile: "ghcr"
+
+  # Public domain — Caddy routes here. Only the web service is public;
+  # the api service is internal-only (reached by web over cluster_shared).
+  domains:
+    staging: ["staging.innermind.xurl.fyi"]
+    production: ["innermind.xurl.fyi"]
+
+  # Which service Caddy routes to, and on what port
+  public_service: web
+  public_service_port: 3000
+
+  # Health check path used by the deploy playbook to verify Caddy routing
+  caddy_verify_path: "/"
+
+  # -----------------------------------------------------------------------
+  # innermind-specific config (mirrors the app.go_kutt.* block convention)
+  # -----------------------------------------------------------------------
+  innermind:
+    api_service: "api"
+    web_service: "web"
+
+    registry: "ghcr.io/codedsultan/innermind"
+
+    health_enabled: true
+    health_endpoint: "/health/ready"
+    health_port: 4000
+    health_retries: 20
+    health_delay: 5
+
+    run_migrate: true
+    run_seed: true   # only actually runs when deploy_env != production
+
+  # -----------------------------------------------------------------------
+  # Database
+  # -----------------------------------------------------------------------
+  db:
+    engine: postgres
+    name: innermind
+    user: innermind
+    host: "cluster-{{ deploy_env }}-shared-postgres"
+    port: 5432
+    password_var: "vault_pg_app_innermind_password"
+
+  # -----------------------------------------------------------------------
+  # Environment variables — these become the api service's .env file
+  # -----------------------------------------------------------------------
+  env:
+    base:
+      NODE_ENV: "staging"
+      API_PREFIX: "api"
+      PORT: "4000"
+      PG_SSL: "false"
+
+    derived:
+      REDIS_HOST: "cluster-{{ deploy_env }}-shared-redis"
+      REDIS_PORT: "6379"
+      CORS_ORIGIN: "https://staging.innermind.xurl.fyi"
+      # PG_HOST / PG_PORT / PG_DATABASE / PG_USER / PG_PASSWORD are
+      # injected automatically from app.db above (see app_env_innermind role)
+
+    secret_map:
+      JWT_SECRET: "vault_innermind_jwt_secret"
+      REDIS_PASSWORD: "vault_redis_password"
+
+    secret_map_optional: {}
+
+    required_keys:
+      - NODE_ENV
+      - PORT
+      - PG_HOST
+      - PG_PASSWORD
+      - JWT_SECRET
+
+  # -----------------------------------------------------------------------
+  # Runtime services — rendered into docker-compose.yml by app_runtime_innermind
+  # -----------------------------------------------------------------------
+  runtime:
+    services:
+      api:
+        image: "ghcr.io/codedsultan/innermind/api:${TAG}"
+        expose: ["4000"]
+        env_file: ".env"
+        healthcheck:
+          test: ["CMD-SHELL", "wget -qO- http://localhost:4000/health || exit 1"]
+          interval: "15s"
+          timeout: "5s"
+          retries: 5
+          start_period: "20s"
+
+      web:
+        image: "ghcr.io/codedsultan/innermind/web:${TAG}"
+        expose: ["3000"]
+        environment:
+          NODE_ENV: "production"
+          PORT: "3000"
+          HOSTNAME: "0.0.0.0"
+          # Server-side fetches (Server Components) go straight to the
+          # api container over the cluster network — see frontend/src/lib/api.ts
+          API_BASE_URL_SERVER: "http://innermind-{{ deploy_env }}-api:4000/api"
+        depends_on: ["api"]
+        healthcheck:
+          test: ["CMD-SHELL", "wget -qO- http://localhost:3000/ || exit 1"]
+          interval: "15s"
+          timeout: "5s"
+          retries: 5
+          start_period: "20s"
+
+  # -----------------------------------------------------------------------
+  # Named volumes — none needed yet
+  # -----------------------------------------------------------------------
+  # volumes_def: []

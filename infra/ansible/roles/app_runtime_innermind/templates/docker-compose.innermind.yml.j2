@@ -1,0 +1,88 @@
+version: "3.9"
+# Ansible managed — innermind stack
+# app=innermind env={{ deploy_env }}
+# DO NOT EDIT ON SERVER — changes will be overwritten on next deploy
+
+{% set api_svc = app.innermind.api_service | default('api') %}
+{% set web_svc = app.innermind.web_service | default('web') %}
+
+services:
+
+{% for svc_name, svc in (app.runtime.services | default({})).items() %}
+  {{ svc_name }}:
+    image: "{{ svc.image }}"
+    container_name: "innermind-{{ deploy_env }}-{{ svc_name }}"
+    restart: unless-stopped
+
+{% if svc_name == api_svc %}
+    env_file:
+      - ".env"
+{% endif %}
+
+{% if svc.environment is defined and svc.environment | length > 0 %}
+    environment:
+{% for k, v in svc.environment.items() %}
+      {{ k }}: {{ v | to_json }}
+{% endfor %}
+{% endif %}
+
+{% if svc.command is defined %}
+    command: {{ svc.command | to_json }}
+{% endif %}
+
+{% if svc.expose is defined and svc.expose | length > 0 %}
+    expose:
+{% for e in svc.expose %}
+      - "{{ e }}"
+{% endfor %}
+{% endif %}
+
+{% if svc.depends_on is defined and svc.depends_on | length > 0 %}
+    depends_on:
+{% for dep in svc.depends_on %}
+      - "innermind-{{ deploy_env }}-{{ dep }}"
+{% endfor %}
+{% endif %}
+
+{% if svc.healthcheck is defined %}
+    healthcheck:
+{% for k, v in svc.healthcheck.items() %}
+      {{ k }}: {{ v | to_json }}
+{% endfor %}
+{% endif %}
+
+{% if svc.volumes is defined and svc.volumes | length > 0 %}
+    volumes:
+{% for v in svc.volumes %}
+      - "{{ v }}"
+{% endfor %}
+{% endif %}
+
+    networks:
+      - cluster_shared
+{% if svc_name == (app.public_service | default('web')) %}
+      - proxy_global
+{% endif %}
+{% if svc.extra_networks is defined %}
+{% for n in svc.extra_networks %}
+      - "{{ n }}"
+{% endfor %}
+{% endif %}
+
+{% endfor %}
+
+networks:
+  proxy_global:
+    external: true
+  cluster_shared:
+    external: true
+    name: "cluster_{{ deploy_env }}_shared"
+
+{% set extra_vols = (app.volumes_def | default([])) %}
+{% if extra_vols | length > 0 %}
+volumes:
+{% for v in extra_vols %}
+  {{ v }}:
+    external: true
+{% endfor %}
+{% endif %}

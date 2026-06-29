@@ -1,0 +1,14 @@
+---
+# ⚠️  PLACEHOLDER — DO NOT COMMIT THIS FILE UNENCRYPTED.
+#
+# Fill in real values, then encrypt with:
+#   ansible-vault encrypt infra/ansible/inventories/production/group_vars/all/vault.yml
+
+vault_ghcr_username: "CHANGEME"
+vault_ghcr_token: "CHANGEME"
+
+vault_pg_app_innermind_password: "CHANGEME"
+vault_redis_password: "CHANGEME"
+vault_innermind_jwt_secret: "CHANGEME"
+
+vault_production_server_vpn_ip: "CHANGEME"

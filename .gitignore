@@ -1,0 +1,42 @@
+# Dependencies
+node_modules/
+.pnpm-store/
+
+
+# Build output
+backend/dist/
+frontend/.next/
+frontend/out/
+
+# Env files — never commit real secrets
+.env
+.env.local
+backend/.env
+frontend/.env
+*.env.local
+
+# Coverage
+coverage/
+backend/coverage/
+frontend/coverage/
+
+# Ansible runtime artifacts
+*.retry
+.ansible/
+infra/ansible/inventories/*/group_vars/all/*.retry
+
+# OS / editor
+.DS_Store
+* copy.*
+* copy/
+*.log
+
+
+.gitnexus
+.ai
+.claude
+CLAUDE.md
+TASKS.md
+
+elencush-algorithm
+scripts

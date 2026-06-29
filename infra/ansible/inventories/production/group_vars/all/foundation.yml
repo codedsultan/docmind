@@ -1,0 +1,22 @@
+---
+deploy_env: production
+
+# Same VPS as staging — confirmed live paths are /srv/apps + /srv/proxy
+# (matches x-infra-node, not the /opt/* convention seen in some older
+# x-infra-main examples).
+apps_base_dir: "/srv/apps"
+proxy_base_dir: "/srv/proxy"
+
+caddy:
+  container_name: "platform-caddy"
+
+cluster_network: "cluster_{{ deploy_env }}_shared"
+
+vault_registries:
+  ghcr:
+    url: ghcr.io
+    username: "{{ vault_ghcr_username }}"
+    token: "{{ vault_ghcr_token }}"
+
+env_file_path: "{{ apps_base_dir }}/innermind-{{ deploy_env }}/.env"
+docker_network: "{{ cluster_network }}"
