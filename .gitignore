@@ -22,6 +22,7 @@ frontend/coverage/
 
 # Ansible runtime artifacts
 *.retry
+infrax/
 infra/
 .ansible/
 

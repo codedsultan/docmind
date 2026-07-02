@@ -32,7 +32,7 @@ jobs:
     outputs:
       backend: ${{ steps.filter.outputs.backend }}
       frontend: ${{ steps.filter.outputs.frontend }}
-      
+      infra: ${{ steps.filter.outputs.infra }}
     steps:
       - uses: actions/checkout@v4
 
@@ -50,6 +50,8 @@ jobs:
               - 'pnpm-lock.yaml'
               - 'pnpm-workspace.yaml'
               - '.npmrc'
+            infra:
+              - 'infra/**'
 
       - name: Force full run on manual dispatch
         if: github.event_name == 'workflow_dispatch'
@@ -234,6 +236,9 @@ jobs:
       environment: ${{ steps.env.outputs.environment }}
       built_backend: ${{ steps.tags.outputs.built_backend }}
       built_frontend: ${{ steps.tags.outputs.built_frontend }}
+      api_tag: ${{ steps.tags.outputs.api_deploy_tag }}
+      worker_tag: ${{ steps.tags.outputs.worker_deploy_tag }}
+      web_tag: ${{ steps.tags.outputs.web_deploy_tag }}
 
     steps:
       - uses: actions/checkout@v4
@@ -258,17 +263,39 @@ jobs:
           echo "built_frontend=${BUILD_FRONTEND}" >> $GITHUB_OUTPUT
 
           if [[ "${{ steps.env.outputs.environment }}" == "production" ]]; then
-            echo "deploy_tag=${SHORT_SHA}" >> $GITHUB_OUTPUT
+            DEPLOY_TAG="${SHORT_SHA}"
+            FLOATING_TAG="latest"
+            echo "deploy_tag=${DEPLOY_TAG}" >> $GITHUB_OUTPUT
             echo "api_tags=${{ env.REGISTRY }}/api:latest,${{ env.REGISTRY }}/api:${{ github.sha }},${{ env.REGISTRY }}/api:${SHORT_SHA}" >> $GITHUB_OUTPUT
             echo "worker_tags=${{ env.REGISTRY }}/worker:latest,${{ env.REGISTRY }}/worker:${{ github.sha }},${{ env.REGISTRY }}/worker:${SHORT_SHA}" >> $GITHUB_OUTPUT
             echo "web_tags=${{ env.REGISTRY }}/web:latest,${{ env.REGISTRY }}/web:${{ github.sha }},${{ env.REGISTRY }}/web:${SHORT_SHA}" >> $GITHUB_OUTPUT
             echo "api_url=https://jsstack.xurl.fyi/api" >> $GITHUB_OUTPUT
           else
-            echo "deploy_tag=develop-${SHORT_SHA}" >> $GITHUB_OUTPUT
+            DEPLOY_TAG="develop-${SHORT_SHA}"
+            FLOATING_TAG="develop"
+            echo "deploy_tag=${DEPLOY_TAG}" >> $GITHUB_OUTPUT
             echo "api_tags=${{ env.REGISTRY }}/api:develop,${{ env.REGISTRY }}/api:develop-${SHORT_SHA}" >> $GITHUB_OUTPUT
             echo "worker_tags=${{ env.REGISTRY }}/worker:develop,${{ env.REGISTRY }}/worker:develop-${SHORT_SHA}" >> $GITHUB_OUTPUT
             echo "web_tags=${{ env.REGISTRY }}/web:develop,${{ env.REGISTRY }}/web:develop-${SHORT_SHA}" >> $GITHUB_OUTPUT
             echo "api_url=https://staging.jsstack.xurl.fyi/api" >> $GITHUB_OUTPUT
+          fi
+
+          # Per-service deploy tags: use this run's SHA tag if that service
+          # was actually rebuilt, otherwise fall back to the floating tag
+          # (develop/latest) so the deploy step never pulls a tag that was
+          # never pushed. api + worker always move together (same codebase).
+          if [[ "${BUILD_BACKEND}" == "true" ]]; then
+            echo "api_deploy_tag=${DEPLOY_TAG}" >> $GITHUB_OUTPUT
+            echo "worker_deploy_tag=${DEPLOY_TAG}" >> $GITHUB_OUTPUT
+          else
+            echo "api_deploy_tag=${FLOATING_TAG}" >> $GITHUB_OUTPUT
+            echo "worker_deploy_tag=${FLOATING_TAG}" >> $GITHUB_OUTPUT
+          fi
+
+          if [[ "${BUILD_FRONTEND}" == "true" ]]; then
+            echo "web_deploy_tag=${DEPLOY_TAG}" >> $GITHUB_OUTPUT
+          else
+            echo "web_deploy_tag=${FLOATING_TAG}" >> $GITHUB_OUTPUT
           fi
 
       - name: Set up QEMU
@@ -338,4 +365,72 @@ jobs:
           echo "| Commit | \`${{ github.sha }}\` |" >> $GITHUB_STEP_SUMMARY
           echo "| Triggered by | @${{ github.actor }} |" >> $GITHUB_STEP_SUMMARY
 
-  
+  # ────────────────────────────────────────────────────────────────
+  # 3. Deploy to EC2
+  #
+  #    One EC2 host runs both environments in separate directories:
+  #      /opt/apps/staging     /opt/apps/production
+  #    The instance has no public SSH port — GitHub Actions brings up
+  #    a WireGuard tunnel first, then SSHes to the server's internal
+  #    VPN address (10.10.0.1). update-tags.sh rewrites only the
+  #    *_TAG lines in that env's .env (never touching hand-managed
+  #    secrets in the same file), then we pull + recreate. Falls back
+  #    to the floating tag for any service that wasn't rebuilt this
+  #    run (see Set image tags step).
+  # ────────────────────────────────────────────────────────────────
+  deploy:
+    name: Deploy to EC2 (${{ needs.build-and-push.outputs.environment }})
+    runs-on: ubuntu-latest
+    needs: build-and-push
+    if: needs.build-and-push.result == 'success'
+    environment: ${{ needs.build-and-push.outputs.environment }}
+
+    steps:
+      - name: Install WireGuard
+        run: sudo apt-get update -y && sudo apt-get install -y wireguard-tools
+
+      - name: Bring up WireGuard tunnel
+        run: |
+          umask 077
+          sudo mkdir -p /etc/wireguard
+          echo "${{ secrets.WG_CONFIG }}" | sudo tee /etc/wireguard/wg0.conf > /dev/null
+          sudo chmod 600 /etc/wireguard/wg0.conf
+          sudo wg-quick up wg0
+          # Wait for the handshake instead of racing straight into ssh
+          for i in $(seq 1 10); do
+            sudo wg show wg0 latest-handshakes | grep -qv '\s0$' && break
+            sleep 1
+          done
+
+      - name: Deploy via SSH (over WireGuard)
+        env:
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GHCR_ACTOR: ${{ github.actor }}
+          APP_ENV: ${{ needs.build-and-push.outputs.environment }}
+          API_TAG: ${{ needs.build-and-push.outputs.api_tag }}
+          WORKER_TAG: ${{ needs.build-and-push.outputs.worker_tag }}
+          WEB_TAG: ${{ needs.build-and-push.outputs.web_tag }}
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.EC2_SSH_KEY }}" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan -t ed25519 10.10.0.1 >> ~/.ssh/known_hosts 2>/dev/null
+
+          ssh -i ~/.ssh/deploy_key -o ConnectTimeout=10 "${{ secrets.EC2_USER }}@10.10.0.1" \
+            "GHCR_TOKEN='${GHCR_TOKEN}' GHCR_ACTOR='${GHCR_ACTOR}' APP_ENV='${APP_ENV}' API_TAG='${API_TAG}' WORKER_TAG='${WORKER_TAG}' WEB_TAG='${WEB_TAG}' bash -s" <<'REMOTE'
+            set -e
+            APP_DIR="/opt/apps/${APP_ENV}"
+            cd "$APP_DIR"
+
+            echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_ACTOR" --password-stdin
+
+            ./update-tags.sh "$API_TAG" "$WORKER_TAG" "$WEB_TAG"
+
+            docker compose pull
+            docker compose up -d --remove-orphans
+            docker image prune -f
+          REMOTE
+
+      - name: Tear down WireGuard tunnel
+        if: always()
+        run: sudo wg-quick down wg0 || true

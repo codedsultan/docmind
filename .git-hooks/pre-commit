@@ -1,2 +1,2 @@
 #!/bin/sh
-./infra/ansible/scripts/preflight.sh
+./infrax/ansible/scripts/preflight.sh
