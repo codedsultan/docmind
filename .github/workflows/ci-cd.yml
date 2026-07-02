@@ -416,6 +416,7 @@ jobs:
           chmod 600 ~/.ssh/deploy_key
           ssh-keyscan -t ed25519 10.10.0.1 >> ~/.ssh/known_hosts 2>/dev/null
           
+          # Run with error capture
           ssh -i ~/.ssh/deploy_key -o ConnectTimeout=10 "${{ secrets.EC2_USER }}@10.10.0.1" \
             "GHCR_TOKEN='${GHCR_TOKEN}' GHCR_ACTOR='${GHCR_ACTOR}' APP_ENV='${APP_ENV}' API_TAG='${API_TAG}' WORKER_TAG='${WORKER_TAG}' WEB_TAG='${WEB_TAG}' bash -x -s" <<'REMOTE'
             set -e
@@ -427,6 +428,13 @@ jobs:
             
             APP_DIR="/opt/apps/${APP_ENV}"
             echo "APP_DIR: ${APP_DIR}"
+            
+            # Check if directory exists
+            if [ ! -d "$APP_DIR" ]; then
+              echo "ERROR: Directory $APP_DIR does not exist!"
+              exit 1
+            fi
+            
             cd "$APP_DIR"
             echo "Current directory: $(pwd)"
             echo "Files: $(ls -la)"
@@ -435,16 +443,26 @@ jobs:
             echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_ACTOR" --password-stdin
             
             echo "=== Running update-tags.sh ==="
+            if [ ! -f "./update-tags.sh" ]; then
+              echo "ERROR: update-tags.sh not found!"
+              exit 1
+            fi
             ./update-tags.sh "$API_TAG" "$WORKER_TAG" "$WEB_TAG"
             
             echo "=== Checking .env after update ==="
-            cat .env | grep "_TAG"
+            cat .env | grep "_TAG" || echo "No _TAG variables found in .env"
             
             echo "=== Docker compose pull ==="
-            docker compose pull
+            docker compose pull || {
+              echo "Docker compose pull failed with exit code: $?"
+              exit 1
+            }
             
             echo "=== Docker compose up ==="
-            docker compose up -d --remove-orphans
+            docker compose up -d --remove-orphans || {
+              echo "Docker compose up failed with exit code: $?"
+              exit 1
+            }
             
             echo "=== Docker compose ps ==="
             docker compose ps
