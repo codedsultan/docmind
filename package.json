@@ -1,17 +1,18 @@
 {
-  "name": "innermind",
+  "name": "jsstack",
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev:backend": "pnpm --filter innermind-api start:dev",
-    "dev:frontend": "pnpm --filter innermind-web dev",
-    "build:backend": "pnpm --filter innermind-api build",
-    "build:frontend": "pnpm --filter innermind-web build",
-    "test:backend": "pnpm --filter innermind-api test:coverage",
-    "test:frontend": "pnpm --filter innermind-web test:coverage",
-    "lint:backend": "pnpm --filter innermind-api lint",
-    "lint:frontend": "pnpm --filter innermind-web lint"
+    "dev:backend": "pnpm --filter jsstack-api start:dev",
+    "dev:frontend": "pnpm --filter jsstack-web dev",
+    "build:backend": "pnpm --filter jsstack-api build",
+    "build:frontend": "pnpm --filter jsstack-web build",
+    "test:backend": "pnpm --filter jsstack-api test:coverage",
+    "test:frontend": "pnpm --filter jsstack-web test:coverage",
+    "lint:backend": "pnpm --filter jsstack-api lint",
+    "lint:frontend": "pnpm --filter jsstack-web lint"
   },
+  "packageManager": "pnpm@10.32.1",
   "engines": {
     "node": ">=22"
   }

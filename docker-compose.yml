@@ -1,8 +1,4 @@
-# Local end-to-end stack. Mirrors the production topology rendered by
-# infra/ansible/roles/app_runtime_innermind/templates/docker-compose.yml.j2:
-# the same service names (api, web), the same env var names (PG_*, REDIS_*,
-# API_BASE_URL_SERVER), just running against local Postgres/Redis instead
-# of the shared cluster.
+# Local end-to-end stack. 
 #
 # Usage:
 #   cp backend/.env.example backend/.env
@@ -12,49 +8,49 @@
 # Frontend:  http://localhost:3000
 # Backend:   http://localhost:4000/api
 # Swagger:   http://localhost:4000/docs
-# Postgres:  localhost:5432 (innermind/innermind)
+# Postgres:  localhost:5432 (jsstack/jsstack)
 
 services:
   postgres:
     image: postgres:16-alpine
-    container_name: innermind-local-postgres
+    container_name: jsstack-local-postgres
     restart: unless-stopped
     environment:
-      POSTGRES_DB: innermind
-      POSTGRES_USER: innermind
-      POSTGRES_PASSWORD: innermind
+      POSTGRES_DB: jsstack
+      POSTGRES_USER: jsstack
+      POSTGRES_PASSWORD: jsstack
     ports:
       - "5432:5432"
     volumes:
-      - innermind_local_pg_data:/var/lib/postgresql/data
+      - jsstack_local_pg_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U innermind"]
+      test: [ "CMD-SHELL", "pg_isready -U jsstack" ]
       interval: 5s
       timeout: 5s
       retries: 10
     networks:
-      - innermind_local
+      - jsstack_local
 
   redis:
     image: redis:7-alpine
-    container_name: innermind-local-redis
+    container_name: jsstack-local-redis
     restart: unless-stopped
     ports:
       - "6379:6379"
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: [ "CMD", "redis-cli", "ping" ]
       interval: 5s
       timeout: 5s
       retries: 10
     networks:
-      - innermind_local
+      - jsstack_local
 
   api:
     build:
       context: ./backend
       dockerfile: Dockerfile
       target: app
-    container_name: innermind-local-api
+    container_name: jsstack-local-api
     restart: unless-stopped
     env_file:
       - ./backend/.env
@@ -73,32 +69,13 @@ services:
       migrate:
         condition: service_completed_successfully
     healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://localhost:4000/health"]
+      test: [ "CMD", "wget", "-qO-", "http://localhost:4000/health" ]
       interval: 15s
       timeout: 5s
       retries: 5
       start_period: 20s
     networks:
-      - innermind_local
-
-  migrate:
-    build:
-      context: ./backend
-      dockerfile: Dockerfile
-      target: app
-    container_name: innermind-local-migrate
-    env_file:
-      - ./backend/.env
-    environment:
-      PG_HOST: postgres
-      REDIS_HOST: redis
-    command: ["node", "node_modules/typeorm/cli.js", "migration:run", "-d", "dist/config/typeorm.cli.js"]
-    depends_on:
-      postgres:
-        condition: service_healthy
-    networks:
-      - innermind_local
-    restart: "no"
+      - jsstack_local
 
   web:
     build:
@@ -109,30 +86,29 @@ services:
         # Baked into the client bundle — must be the URL *your browser*
         # can reach. localhost:4000 works because we publish that port above.
         NEXT_PUBLIC_API_URL: http://localhost:4000/api
-    container_name: innermind-local-web
+    container_name: jsstack-local-web
     restart: unless-stopped
     environment:
       # Server-side fetches (Server Components) go straight to the
       # api container over the Docker network — mirrors API_BASE_URL_SERVER
-      # in infra/ansible's go-kutt-style app definition.
       API_BASE_URL_SERVER: http://api:4000/api
     ports:
       - "3000:3000"
     depends_on:
       - api
     healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://localhost:3000/"]
+      test: [ "CMD", "wget", "-qO-", "http://localhost:3000/" ]
       interval: 15s
       timeout: 5s
       retries: 5
       start_period: 20s
     networks:
-      - innermind_local
+      - jsstack_local
 
 networks:
-  innermind_local:
-    name: innermind_local
+  jsstack_local:
+    name: jsstack_local
 
 volumes:
-  innermind_local_pg_data:
-    name: innermind_local_pg_data
+  jsstack_local_pg_data:
+    name: jsstack_local_pg_data

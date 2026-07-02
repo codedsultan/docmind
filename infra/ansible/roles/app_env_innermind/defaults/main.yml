@@ -1,6 +1,0 @@
----
-env_filename: ".env"
-env_owner: root
-env_group: root
-env_mode: "0600"
-env_fail_on_empty_required: true

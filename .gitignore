@@ -22,8 +22,9 @@ frontend/coverage/
 
 # Ansible runtime artifacts
 *.retry
+infra/
 .ansible/
-infra/ansible/inventories/*/group_vars/all/*.retry
+
 
 # OS / editor
 .DS_Store
@@ -38,5 +39,6 @@ infra/ansible/inventories/*/group_vars/all/*.retry
 CLAUDE.md
 TASKS.md
 
-elencush-algorithm
+
 scripts
+cmd.sh
