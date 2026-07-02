@@ -32,6 +32,9 @@ COPY --from=build --chown=nestjs:nodejs /app/backend/dist ./dist
 COPY --from=build --chown=nestjs:nodejs /app/backend/node_modules ./node_modules
 COPY --from=build --chown=nestjs:nodejs /app/backend/package.json ./package.json
 
+# Copy the healthcheck script directly (if it's in backend/src/scripts/)
+COPY --from=build --chown=nestjs:nodejs /app/backend/src/scripts/worker-health.js ./dist/src/scripts/worker-health.js
+
 USER nestjs
 
 HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
