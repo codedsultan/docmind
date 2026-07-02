@@ -402,7 +402,7 @@ jobs:
             sleep 1
           done
 
-      - name: Deploy via SSH (over WireGuard)
+      - name: Deploy via SSH
         env:
           GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GHCR_ACTOR: ${{ github.actor }}
@@ -415,22 +415,75 @@ jobs:
           echo "${{ secrets.EC2_SSH_KEY }}" > ~/.ssh/deploy_key
           chmod 600 ~/.ssh/deploy_key
           ssh-keyscan -t ed25519 10.10.0.1 >> ~/.ssh/known_hosts 2>/dev/null
-
+          
           ssh -i ~/.ssh/deploy_key -o ConnectTimeout=10 "${{ secrets.EC2_USER }}@10.10.0.1" \
-            "GHCR_TOKEN='${GHCR_TOKEN}' GHCR_ACTOR='${GHCR_ACTOR}' APP_ENV='${APP_ENV}' API_TAG='${API_TAG}' WORKER_TAG='${WORKER_TAG}' WEB_TAG='${WEB_TAG}' bash -s" <<'REMOTE'
+            "GHCR_TOKEN='${GHCR_TOKEN}' GHCR_ACTOR='${GHCR_ACTOR}' APP_ENV='${APP_ENV}' API_TAG='${API_TAG}' WORKER_TAG='${WORKER_TAG}' WEB_TAG='${WEB_TAG}' bash -x -s" <<'REMOTE'
             set -e
+            echo "=== Starting deployment ==="
+            echo "APP_ENV: ${APP_ENV}"
+            echo "API_TAG: ${API_TAG}"
+            echo "WORKER_TAG: ${WORKER_TAG}"
+            echo "WEB_TAG: ${WEB_TAG}"
+            
             APP_DIR="/opt/apps/${APP_ENV}"
+            echo "APP_DIR: ${APP_DIR}"
             cd "$APP_DIR"
-
+            echo "Current directory: $(pwd)"
+            echo "Files: $(ls -la)"
+            
+            echo "=== Docker login ==="
             echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_ACTOR" --password-stdin
-
+            
+            echo "=== Running update-tags.sh ==="
             ./update-tags.sh "$API_TAG" "$WORKER_TAG" "$WEB_TAG"
-
+            
+            echo "=== Checking .env after update ==="
+            cat .env | grep "_TAG"
+            
+            echo "=== Docker compose pull ==="
             docker compose pull
+            
+            echo "=== Docker compose up ==="
             docker compose up -d --remove-orphans
+            
+            echo "=== Docker compose ps ==="
+            docker compose ps
+            
+            echo "=== Cleaning up ==="
             docker image prune -f
+            
+            echo "=== Deployment complete ==="
           REMOTE
 
-      - name: Tear down WireGuard tunnel
-        if: always()
-        run: sudo wg-quick down wg0 || true
+      # - name: Deploy via SSH (over WireGuard)
+      #   env:
+      #     GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      #     GHCR_ACTOR: ${{ github.actor }}
+      #     APP_ENV: ${{ needs.build-and-push.outputs.environment }}
+      #     API_TAG: ${{ needs.build-and-push.outputs.api_tag }}
+      #     WORKER_TAG: ${{ needs.build-and-push.outputs.worker_tag }}
+      #     WEB_TAG: ${{ needs.build-and-push.outputs.web_tag }}
+      #   run: |
+      #     mkdir -p ~/.ssh
+      #     echo "${{ secrets.EC2_SSH_KEY }}" > ~/.ssh/deploy_key
+      #     chmod 600 ~/.ssh/deploy_key
+      #     ssh-keyscan -t ed25519 10.10.0.1 >> ~/.ssh/known_hosts 2>/dev/null
+
+      #     ssh -i ~/.ssh/deploy_key -o ConnectTimeout=10 "${{ secrets.EC2_USER }}@10.10.0.1" \
+      #       "GHCR_TOKEN='${GHCR_TOKEN}' GHCR_ACTOR='${GHCR_ACTOR}' APP_ENV='${APP_ENV}' API_TAG='${API_TAG}' WORKER_TAG='${WORKER_TAG}' WEB_TAG='${WEB_TAG}' bash -s" <<'REMOTE'
+      #       set -e
+      #       APP_DIR="/opt/apps/${APP_ENV}"
+      #       cd "$APP_DIR"
+
+      #       echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_ACTOR" --password-stdin
+
+      #       ./update-tags.sh "$API_TAG" "$WORKER_TAG" "$WEB_TAG"
+
+      #       docker compose pull
+      #       docker compose up -d --remove-orphans
+      #       docker image prune -f
+      #     REMOTE
+
+      # - name: Tear down WireGuard tunnel
+      #   if: always()
+      #   run: sudo wg-quick down wg0 || true
