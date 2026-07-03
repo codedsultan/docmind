@@ -402,7 +402,7 @@ jobs:
             sleep 1
           done
 
-      - name: Deploy via SSH
+      - name: Deploy via SSH (Debug)
         env:
           GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GHCR_ACTOR: ${{ github.actor }}
@@ -416,61 +416,39 @@ jobs:
           chmod 600 ~/.ssh/deploy_key
           ssh-keyscan -t ed25519 10.10.0.1 >> ~/.ssh/known_hosts 2>/dev/null
           
-          # Run with error capture
           ssh -i ~/.ssh/deploy_key -o ConnectTimeout=10 "${{ secrets.EC2_USER }}@10.10.0.1" \
-            "GHCR_TOKEN='${GHCR_TOKEN}' GHCR_ACTOR='${GHCR_ACTOR}' APP_ENV='${APP_ENV}' API_TAG='${API_TAG}' WORKER_TAG='${WORKER_TAG}' WEB_TAG='${WEB_TAG}' bash -x -s" <<'REMOTE'
+            "GHCR_TOKEN='${GHCR_TOKEN}' GHCR_ACTOR='${GHCR_ACTOR}' APP_ENV='${APP_ENV}' API_TAG='${API_TAG}' WORKER_TAG='${WORKER_TAG}' WEB_TAG='${WEB_TAG}' bash -s" <<'REMOTE'
             set -e
-            echo "=== Starting deployment ==="
-            echo "APP_ENV: ${APP_ENV}"
-            echo "API_TAG: ${API_TAG}"
-            echo "WORKER_TAG: ${WORKER_TAG}"
-            echo "WEB_TAG: ${WEB_TAG}"
             
+            echo "=== Test 1: Check directory ==="
             APP_DIR="/opt/apps/${APP_ENV}"
-            echo "APP_DIR: ${APP_DIR}"
+            ls -la "$APP_DIR" || exit 1
             
-            # Check if directory exists
-            if [ ! -d "$APP_DIR" ]; then
-              echo "ERROR: Directory $APP_DIR does not exist!"
-              exit 1
-            fi
-            
+            echo "=== Test 2: Check update-tags.sh ==="
             cd "$APP_DIR"
-            echo "Current directory: $(pwd)"
-            echo "Files: $(ls -la)"
+            ls -la update-tags.sh || exit 1
+            head -5 update-tags.sh || exit 1
             
-            echo "=== Docker login ==="
-            echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_ACTOR" --password-stdin
+            echo "=== Test 3: Check .env ==="
+            cat .env || echo ".env is empty or missing"
             
-            echo "=== Running update-tags.sh ==="
-            if [ ! -f "./update-tags.sh" ]; then
-              echo "ERROR: update-tags.sh not found!"
-              exit 1
-            fi
-            ./update-tags.sh "$API_TAG" "$WORKER_TAG" "$WEB_TAG"
+            echo "=== Test 4: Docker login ==="
+            echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_ACTOR" --password-stdin || exit 1
             
-            echo "=== Checking .env after update ==="
-            cat .env | grep "_TAG" || echo "No _TAG variables found in .env"
+            echo "=== Test 5: Run update-tags.sh ==="
+            ./update-tags.sh "$API_TAG" "$WORKER_TAG" "$WEB_TAG" || exit 1
             
-            echo "=== Docker compose pull ==="
-            docker compose pull || {
-              echo "Docker compose pull failed with exit code: $?"
-              exit 1
-            }
+            echo "=== Test 6: Check updated .env ==="
+            grep "_TAG" .env || exit 1
             
-            echo "=== Docker compose up ==="
-            docker compose up -d --remove-orphans || {
-              echo "Docker compose up failed with exit code: $?"
-              exit 1
-            }
+            echo "=== Test 7: Docker compose pull ==="
+            docker compose pull || exit 1
             
-            echo "=== Docker compose ps ==="
+            echo "=== Test 8: Docker compose up ==="
+            docker compose up -d --remove-orphans || exit 1
+            
+            echo "=== All tests passed! ==="
             docker compose ps
-            
-            echo "=== Cleaning up ==="
-            docker image prune -f
-            
-            echo "=== Deployment complete ==="
           REMOTE
 
       # - name: Deploy via SSH (over WireGuard)
