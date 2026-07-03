@@ -386,23 +386,33 @@ jobs:
     environment: ${{ needs.build-and-push.outputs.environment }}
 
     steps:
-      - name: Install WireGuard
-        run: sudo apt-get update -y && sudo apt-get install -y wireguard-tools
+      - name: Setup SSH Agent
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.EC2_SSH_KEY }}
 
-      - name: Bring up WireGuard tunnel
+      - name: Setup VPN (WireGuard)
         run: |
-          umask 077
-          sudo mkdir -p /etc/wireguard
+          sudo apt-get update -q
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y wireguard wireguard-tools resolvconf netcat-openbsd
+
           echo "${{ secrets.WG_CONFIG }}" | sudo tee /etc/wireguard/wg0.conf > /dev/null
           sudo chmod 600 /etc/wireguard/wg0.conf
           sudo wg-quick up wg0
-          # Wait for the handshake instead of racing straight into ssh
-          for i in $(seq 1 10); do
-            sudo wg show wg0 latest-handshakes | grep -qv '\s0$' && break
-            sleep 1
-          done
+          sleep 3
 
-      - name: Deploy via SSH (Debug)
+          TARGET_IP=10.10.0.1
+          ping -c 2 "${TARGET_IP}"
+          nc -vz "${TARGET_IP}" 22
+
+      - name: Configure Known Hosts
+        run: |
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          ssh-keyscan -t ed25519 10.10.0.1 >> ~/.ssh/known_hosts 2>/dev/null
+          chmod 644 ~/.ssh/known_hosts
+
+      - name: Execute Remote Deployment via SSH
         env:
           GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GHCR_ACTOR: ${{ github.actor }}
@@ -411,75 +421,39 @@ jobs:
           WORKER_TAG: ${{ needs.build-and-push.outputs.worker_tag }}
           WEB_TAG: ${{ needs.build-and-push.outputs.web_tag }}
         run: |
-          mkdir -p ~/.ssh
-          echo "${{ secrets.EC2_SSH_KEY }}" > ~/.ssh/deploy_key
-          chmod 600 ~/.ssh/deploy_key
-          ssh-keyscan -t ed25519 10.10.0.1 >> ~/.ssh/known_hosts 2>/dev/null
-          
-          ssh -i ~/.ssh/deploy_key -o ConnectTimeout=10 "${{ secrets.EC2_USER }}@10.10.0.1" \
+          ssh -o ConnectTimeout=10 "${{ secrets.EC2_USER }}@10.10.0.1" \
             "GHCR_TOKEN='${GHCR_TOKEN}' GHCR_ACTOR='${GHCR_ACTOR}' APP_ENV='${APP_ENV}' API_TAG='${API_TAG}' WORKER_TAG='${WORKER_TAG}' WEB_TAG='${WEB_TAG}' bash -s" <<'REMOTE'
             set -e
             
-            echo "=== Test 1: Check directory ==="
             APP_DIR="/opt/apps/${APP_ENV}"
-            ls -la "$APP_DIR" || exit 1
+            echo "--- Navigating to application directory: $APP_DIR ---"
+            cd "$APP_DIR" || { echo "Directory $APP_DIR not found"; exit 1; }
             
-            echo "=== Test 2: Check update-tags.sh ==="
-            cd "$APP_DIR"
-            ls -la update-tags.sh || exit 1
-            head -5 update-tags.sh || exit 1
+            echo "--- Verifying deployment components ---"
+            if [ ! -f "update-tags.sh" ]; then
+              echo "Error: update-tags.sh is missing in $APP_DIR"
+              exit 1
+            fi
             
-            echo "=== Test 3: Check .env ==="
-            cat .env || echo ".env is empty or missing"
+            echo "--- Authenticating with GitHub Container Registry ---"
+            echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_ACTOR" --password-stdin
             
-            echo "=== Test 4: Docker login ==="
-            echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_ACTOR" --password-stdin || exit 1
+            echo "--- Updating environment target tags ---"
+            ./update-tags.sh "$API_TAG" "$WORKER_TAG" "$WEB_TAG"
             
-            echo "=== Test 5: Run update-tags.sh ==="
-            ./update-tags.sh "$API_TAG" "$WORKER_TAG" "$WEB_TAG" || exit 1
+            echo "--- Pulling latest container images ---"
+            docker compose pull
             
-            echo "=== Test 6: Check updated .env ==="
-            grep "_TAG" .env || exit 1
+            echo "--- Restarting stack containers ---"
+            docker compose up -d --remove-orphans
             
-            echo "=== Test 7: Docker compose pull ==="
-            docker compose pull || exit 1
+            echo "--- Cleaning up dangling images ---"
+            docker image prune -f
             
-            echo "=== Test 8: Docker compose up ==="
-            docker compose up -d --remove-orphans || exit 1
-            
-            echo "=== All tests passed! ==="
+            echo "--- Status Check ---"
             docker compose ps
           REMOTE
 
-      # - name: Deploy via SSH (over WireGuard)
-      #   env:
-      #     GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      #     GHCR_ACTOR: ${{ github.actor }}
-      #     APP_ENV: ${{ needs.build-and-push.outputs.environment }}
-      #     API_TAG: ${{ needs.build-and-push.outputs.api_tag }}
-      #     WORKER_TAG: ${{ needs.build-and-push.outputs.worker_tag }}
-      #     WEB_TAG: ${{ needs.build-and-push.outputs.web_tag }}
-      #   run: |
-      #     mkdir -p ~/.ssh
-      #     echo "${{ secrets.EC2_SSH_KEY }}" > ~/.ssh/deploy_key
-      #     chmod 600 ~/.ssh/deploy_key
-      #     ssh-keyscan -t ed25519 10.10.0.1 >> ~/.ssh/known_hosts 2>/dev/null
-
-      #     ssh -i ~/.ssh/deploy_key -o ConnectTimeout=10 "${{ secrets.EC2_USER }}@10.10.0.1" \
-      #       "GHCR_TOKEN='${GHCR_TOKEN}' GHCR_ACTOR='${GHCR_ACTOR}' APP_ENV='${APP_ENV}' API_TAG='${API_TAG}' WORKER_TAG='${WORKER_TAG}' WEB_TAG='${WEB_TAG}' bash -s" <<'REMOTE'
-      #       set -e
-      #       APP_DIR="/opt/apps/${APP_ENV}"
-      #       cd "$APP_DIR"
-
-      #       echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_ACTOR" --password-stdin
-
-      #       ./update-tags.sh "$API_TAG" "$WORKER_TAG" "$WEB_TAG"
-
-      #       docker compose pull
-      #       docker compose up -d --remove-orphans
-      #       docker image prune -f
-      #     REMOTE
-
-      # - name: Tear down WireGuard tunnel
-      #   if: always()
-      #   run: sudo wg-quick down wg0 || true
+      - name: Tear down WireGuard tunnel
+        if: always()
+        run: sudo wg-quick down wg0 || true
