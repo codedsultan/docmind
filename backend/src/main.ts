@@ -11,7 +11,8 @@ async function bootstrap() {
   const app = await NestFactory.create(AppModule);
   app.setGlobalPrefix(process.env.API_PREFIX ?? 'api', { exclude: ['health'] });
   const port = process.env.PORT ?? 4000;
-  await app.listen(port);
+  const host = process.env.HOST || '0.0.0.0';
+  await app.listen(port, host);
 }
 bootstrap().catch((err) => {
   console.error('Failed to start application', err);
