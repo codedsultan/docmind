@@ -8,32 +8,32 @@
 # Frontend:  http://localhost:3000
 # Backend:   http://localhost:4000/api
 # Swagger:   http://localhost:4000/docs
-# Postgres:  localhost:5432 (jsstack/jsstack)
+# Postgres:  localhost:5432 (docmind/docmind)
 
 services:
   postgres:
     image: postgres:16-alpine
-    container_name: jsstack-local-postgres
+    container_name: docmind-local-postgres
     restart: unless-stopped
     environment:
-      POSTGRES_DB: jsstack
-      POSTGRES_USER: jsstack
-      POSTGRES_PASSWORD: jsstack
+      POSTGRES_DB: docmind
+      POSTGRES_USER: docmind
+      POSTGRES_PASSWORD: docmind
     ports:
       - "5432:5432"
     volumes:
-      - jsstack_local_pg_data:/var/lib/postgresql/data
+      - docmind_local_pg_data:/var/lib/postgresql/data
     healthcheck:
-      test: [ "CMD-SHELL", "pg_isready -U jsstack" ]
+      test: [ "CMD-SHELL", "pg_isready -U docmind" ]
       interval: 5s
       timeout: 5s
       retries: 10
     networks:
-      - jsstack_local
+      - docmind_local
 
   redis:
     image: redis:7-alpine
-    container_name: jsstack-local-redis
+    container_name: docmind-local-redis
     restart: unless-stopped
     ports:
       - "6379:6379"
@@ -43,14 +43,14 @@ services:
       timeout: 5s
       retries: 10
     networks:
-      - jsstack_local
+      - docmind_local
 
   api:
     build:
       context: ./backend
       dockerfile: Dockerfile
       target: app
-    container_name: jsstack-local-api
+    container_name: docmind-local-api
     restart: unless-stopped
     env_file:
       - ./backend/.env
@@ -75,7 +75,7 @@ services:
       retries: 5
       start_period: 20s
     networks:
-      - jsstack_local
+      - docmind_local
 
   web:
     build:
@@ -86,7 +86,7 @@ services:
         # Baked into the client bundle — must be the URL *your browser*
         # can reach. localhost:4000 works because we publish that port above.
         NEXT_PUBLIC_API_URL: http://localhost:4000/api
-    container_name: jsstack-local-web
+    container_name: docmind-local-web
     restart: unless-stopped
     environment:
       # Server-side fetches (Server Components) go straight to the
@@ -103,12 +103,12 @@ services:
       retries: 5
       start_period: 20s
     networks:
-      - jsstack_local
+      - docmind_local
 
 networks:
-  jsstack_local:
-    name: jsstack_local
+  docmind_local:
+    name: docmind_local
 
 volumes:
-  jsstack_local_pg_data:
-    name: jsstack_local_pg_data
+  docmind_local_pg_data:
+    name: docmind_local_pg_data

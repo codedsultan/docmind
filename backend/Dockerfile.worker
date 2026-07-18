@@ -9,7 +9,7 @@ FROM base AS deps
 COPY pnpm-lock.yaml pnpm-workspace.yaml package.json .npmrc ./
 COPY backend/package.json ./backend/package.json
 COPY backend/prisma ./backend/prisma
-RUN pnpm install --frozen-lockfile --filter jsstack-api...
+RUN pnpm install --frozen-lockfile --filter docmind-api...
 
 FROM base AS build
 COPY --from=deps /app/node_modules ./node_modules

@@ -1,0 +1,187 @@
+name: "2. Container Build"
+
+on:
+  workflow_run:
+    workflows: ["1. CI Gates"]
+    types: [completed]
+    branches: ["main", "develop"]
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: "Target environment"
+        required: true
+        type: choice
+        options:
+          - production
+          - staging
+        default: production
+
+permissions:
+  contents: read
+  packages: write
+  id-token: write
+
+env:
+  REGISTRY: ghcr.io/codedsultan/docmind
+
+jobs:
+  build-and-push:
+    name: Build & Push Images
+    runs-on: ubuntu-latest
+    if: |
+      github.event_name == 'workflow_dispatch' || 
+      (github.event.workflow_run.conclusion == 'success' && github.event_name == 'workflow_run')
+
+    outputs:
+      environment: ${{ steps.env.outputs.environment }}
+      api_tag: ${{ steps.tags.outputs.api_deploy_tag }}
+      worker_tag: ${{ steps.tags.outputs.worker_deploy_tag }}
+      web_tag: ${{ steps.tags.outputs.web_deploy_tag }}
+
+    steps:
+      # workflow_run does NOT check out the triggering commit by default —
+      # without an explicit ref, this would silently build from the
+      # default branch's HEAD instead of the branch whose CI run fired
+      # this workflow.
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            backend:
+              - 'backend/**'
+              - 'pnpm-lock.yaml'
+              - 'pnpm-workspace.yaml'
+              - '.npmrc'
+            frontend:
+              - 'frontend/**'
+              - 'pnpm-lock.yaml'
+              - 'pnpm-workspace.yaml'
+              - '.npmrc'
+
+      - name: Determine environment
+        id: env
+        run: |
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            echo "environment=${{ inputs.environment }}" >> $GITHUB_OUTPUT
+          elif [[ "${{ github.event.workflow_run.head_branch }}" == "main" ]]; then
+            echo "environment=production" >> $GITHUB_OUTPUT
+          else
+            echo "environment=staging" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Set image tags
+        id: tags
+        run: |
+          SHORT_SHA=$(git rev-parse --short HEAD)
+          
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            BUILD_BACKEND="true"
+            BUILD_FRONTEND="true"
+          else
+            BUILD_BACKEND="${{ steps.filter.outputs.backend }}"
+            BUILD_FRONTEND="${{ steps.filter.outputs.frontend }}"
+          fi
+          
+          echo "built_backend=${BUILD_BACKEND}" >> $GITHUB_OUTPUT
+          echo "built_frontend=${BUILD_FRONTEND}" >> $GITHUB_OUTPUT
+
+          if [[ "${{ steps.env.outputs.environment }}" == "production" ]]; then
+            DEPLOY_TAG="${SHORT_SHA}"
+            FLOATING_TAG="latest"
+            echo "api_tags=${{ env.REGISTRY }}/api:latest,${{ env.REGISTRY }}/api:${SHORT_SHA}" >> $GITHUB_OUTPUT
+            echo "worker_tags=${{ env.REGISTRY }}/worker:latest,${{ env.REGISTRY }}/worker:${SHORT_SHA}" >> $GITHUB_OUTPUT
+            echo "web_tags=${{ env.REGISTRY }}/web:latest,${{ env.REGISTRY }}/web:${SHORT_SHA}" >> $GITHUB_OUTPUT
+            echo "api_url=https://docmind.xurl.fyi/api" >> $GITHUB_OUTPUT
+          else
+            DEPLOY_TAG="develop-${SHORT_SHA}"
+            FLOATING_TAG="develop"
+            echo "api_tags=${{ env.REGISTRY }}/api:develop,${{ env.REGISTRY }}/api:develop-${SHORT_SHA}" >> $GITHUB_OUTPUT
+            echo "worker_tags=${{ env.REGISTRY }}/worker:develop,${{ env.REGISTRY }}/worker:develop-${SHORT_SHA}" >> $GITHUB_OUTPUT
+            echo "web_tags=${{ env.REGISTRY }}/web:develop,${{ env.REGISTRY }}/web:develop-${SHORT_SHA}" >> $GITHUB_OUTPUT
+            echo "api_url=https://staging.docmind.xurl.fyi/api" >> $GITHUB_OUTPUT
+          fi
+
+          if [[ "${BUILD_BACKEND}" == "true" ]]; then
+            echo "api_deploy_tag=${DEPLOY_TAG}" >> $GITHUB_OUTPUT
+            echo "worker_deploy_tag=${DEPLOY_TAG}" >> $GITHUB_OUTPUT
+          else
+            echo "api_deploy_tag=${FLOATING_TAG}" >> $GITHUB_OUTPUT
+            echo "worker_deploy_tag=${FLOATING_TAG}" >> $GITHUB_OUTPUT
+          fi
+
+          if [[ "${BUILD_FRONTEND}" == "true" ]]; then
+            echo "web_deploy_tag=${DEPLOY_TAG}" >> $GITHUB_OUTPUT
+          else
+            echo "web_deploy_tag=${FLOATING_TAG}" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push api image
+        if: steps.tags.outputs.built_backend == 'true'
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./backend/Dockerfile
+          target: app
+          push: true
+          tags: ${{ steps.tags.outputs.api_tags }}
+          cache-from: type=gha,scope=api
+          cache-to: type=gha,mode=max,scope=api
+
+      - name: Build and push worker image
+        if: steps.tags.outputs.built_backend == 'true'
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./backend/Dockerfile.worker
+          target: app
+          push: true
+          tags: ${{ steps.tags.outputs.worker_tags }}
+          cache-from: type=gha,scope=api
+          cache-to: type=gha,mode=max,scope=worker
+
+      - name: Build and push web image
+        if: steps.tags.outputs.built_frontend == 'true'
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./frontend/Dockerfile
+          target: app
+          push: true
+          build-args: |
+            NEXT_PUBLIC_API_URL=${{ steps.tags.outputs.api_url }}
+          tags: ${{ steps.tags.outputs.web_tags }}
+          cache-from: type=gha,scope=web
+          cache-to: type=gha,mode=max,scope=web
+
+  trigger-deploy:
+    name: Call Deploy
+    needs: build-and-push
+    # Deploy is opt-in via a repo variable so the pipeline can build/push
+    # images (useful on its own) without failing on a server that doesn't
+    # exist yet. Settings → Secrets and variables → Actions → Variables →
+    # add DEPLOY_ENABLED = true once EC2 + WireGuard + secrets are ready.
+    if: vars.DEPLOY_ENABLED == 'true'
+    uses: ./.github/workflows/deploy.yml
+    with:
+      environment: ${{ needs.build-and-push.outputs.environment }}
+      api_tag: ${{ needs.build-and-push.outputs.api_tag }}
+      worker_tag: ${{ needs.build-and-push.outputs.worker_tag }}
+      web_tag: ${{ needs.build-and-push.outputs.web_tag }}
+    secrets: inherit

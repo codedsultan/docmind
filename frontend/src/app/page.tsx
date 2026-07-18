@@ -20,7 +20,7 @@ export default async function HomePage() {
 
   return (
     <main className="flex min-h-screen flex-col items-center justify-center gap-4 p-8">
-      <h1 className="text-3xl font-bold">jsstack</h1>
+      <h1 className="text-3xl font-bold">docmind</h1>
 
       <div className="rounded-lg border p-6 text-center">
         <p className="text-sm text-gray-500 mb-2">Backend says:</p>
