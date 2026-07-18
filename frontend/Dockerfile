@@ -14,7 +14,7 @@ WORKDIR /app
 FROM base AS deps
 COPY pnpm-lock.yaml pnpm-workspace.yaml package.json .npmrc ./
 COPY frontend/package.json ./frontend/package.json
-RUN pnpm install --frozen-lockfile --filter jsstack-web...
+RUN pnpm install --frozen-lockfile --filter docmind-web...
 
 FROM base AS build
 ARG NEXT_PUBLIC_API_URL=http://localhost:4000/api

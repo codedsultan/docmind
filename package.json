@@ -1,16 +1,16 @@
 {
-  "name": "jsstack",
+  "name": "docmind",
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev:backend": "pnpm --filter jsstack-api start:dev",
-    "dev:frontend": "pnpm --filter jsstack-web dev",
-    "build:backend": "pnpm --filter jsstack-api build",
-    "build:frontend": "pnpm --filter jsstack-web build",
-    "test:backend": "pnpm --filter jsstack-api test:coverage",
-    "test:frontend": "pnpm --filter jsstack-web test:coverage",
-    "lint:backend": "pnpm --filter jsstack-api lint",
-    "lint:frontend": "pnpm --filter jsstack-web lint"
+    "dev:backend": "pnpm --filter docmind-api start:dev",
+    "dev:frontend": "pnpm --filter docmind-web dev",
+    "build:backend": "pnpm --filter docmind-api build",
+    "build:frontend": "pnpm --filter docmind-web build",
+    "test:backend": "pnpm --filter docmind-api test:coverage",
+    "test:frontend": "pnpm --filter docmind-web test:coverage",
+    "lint:backend": "pnpm --filter docmind-api lint",
+    "lint:frontend": "pnpm --filter docmind-web lint"
   },
   "packageManager": "pnpm@10.32.1",
   "engines": {
