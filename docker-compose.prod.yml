@@ -1,0 +1,134 @@
+# Production stack — no source mounts, explicit ports, restart: always.
+#
+# Usage:
+#   cp backend/.env.example backend/.env.prod   # then fill in real secrets
+#   cp frontend/.env.example frontend/.env.prod
+#   docker compose -f docker-compose.prod.yml up -d
+#
+# Frontend:  http://<host>:3400
+# Backend:   http://<host>:4500/api
+# Swagger:   http://<host>:4500/docs
+# Postgres:  <host>:5349  (docmind/docmind — change in prod .env)
+
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: docmind-prod-postgres
+    restart: always
+    env_file:
+      - ./backend/.env.prod
+    environment:
+      POSTGRES_DB: ${PG_DATABASE:-docmind}
+      POSTGRES_USER: ${PG_USER:-docmind}
+      POSTGRES_PASSWORD: ${PG_PASSWORD}
+    # No public port — only accessible within the Docker network
+    # ports:
+    #   - "5349:5432"
+    volumes:
+      - docmind_prod_pg_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U docmind"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks:
+      - docmind_prod
+
+  redis:
+    image: redis:7-alpine
+    container_name: docmind-prod-redis
+    restart: always
+    # No public port — only accessible within the Docker network
+    # ports:
+    #   - "6399:6379"
+    command: redis-server --requirepass ${REDIS_PASSWORD}
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD}", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks:
+      - docmind_prod
+
+  migrate:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+      target: app
+    container_name: docmind-prod-migrate
+    command: ["node", "node_modules/.bin/prisma", "migrate", "deploy"]
+    env_file:
+      - ./backend/.env.prod
+    environment:
+      PG_HOST: postgres
+      DATABASE_URL: postgresql://${PG_USER:-docmind}:${PG_PASSWORD:-docmind}@postgres:5432/${PG_DATABASE:-docmind}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - docmind_prod
+
+  api:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+      target: app
+    container_name: docmind-prod-api
+    restart: always
+    env_file:
+      - ./backend/.env.prod
+    environment:
+      PG_HOST: postgres
+      REDIS_HOST: redis
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
+      REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379
+      DATABASE_URL: postgresql://${PG_USER:-docmind}:${PG_PASSWORD:-docmind}@postgres:5432/${PG_DATABASE:-docmind}
+    ports:
+      - "4500:4000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:4000/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    networks:
+      - docmind_prod
+
+  web:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      target: app
+      args:
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:4500/api}
+    container_name: docmind-prod-web
+    restart: always
+    environment:
+      API_BASE_URL_SERVER: http://api:4000/api
+    ports:
+      - "3400:3000"
+    depends_on:
+      - api
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:3000/"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    networks:
+      - docmind_prod
+
+networks:
+  docmind_prod:
+    name: docmind_prod
+
+volumes:
+  docmind_prod_pg_data:
+    name: docmind_prod_pg_data

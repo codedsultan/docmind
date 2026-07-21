@@ -5,14 +5,14 @@
 #   cp frontend/.env.example frontend/.env
 #   docker compose up --build
 #
-# Frontend:  http://localhost:3000
-# Backend:   http://localhost:4000/api
-# Swagger:   http://localhost:4000/docs
-# Postgres:  localhost:5432 (docmind/docmind)
+# Frontend:  http://localhost:3400
+# Backend:   http://localhost:4500/api
+# Swagger:   http://localhost:4500/docs
+# Postgres:  localhost:5349 (docmind/docmind)
 
 services:
   postgres:
-    image: postgres:16-alpine
+    image: pgvector/pgvector:pg16
     container_name: docmind-local-postgres
     restart: unless-stopped
     environment:
@@ -20,7 +20,7 @@ services:
       POSTGRES_USER: docmind
       POSTGRES_PASSWORD: docmind
     ports:
-      - "5432:5432"
+      - "5349:5432"
     volumes:
       - docmind_local_pg_data:/var/lib/postgresql/data
     healthcheck:
@@ -36,7 +36,7 @@ services:
     container_name: docmind-local-redis
     restart: unless-stopped
     ports:
-      - "6379:6379"
+      - "6399:6379"
     healthcheck:
       test: [ "CMD", "redis-cli", "ping" ]
       interval: 5s
@@ -45,22 +45,40 @@ services:
     networks:
       - docmind_local
 
+  migrate:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+      target: app
+    container_name: docmind-local-migrate
+    # command: [ "node", "node_modules/.bin/prisma", "migrate", "deploy" ]
+    command: npx prisma migrate deploy
+    env_file:
+      - ./backend/.env
+    environment:
+      PG_HOST: postgres
+      DATABASE_URL: postgresql://docmind:${PG_PASSWORD:-docmind}@postgres:5432/docmind
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - docmind_local
+
   api:
     build:
-      context: ./backend
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: backend/Dockerfile
       target: app
     container_name: docmind-local-api
     restart: unless-stopped
     env_file:
       - ./backend/.env
     environment:
-      # Override host-specific values so the API talks to the
-      # *containers* on this network, not localhost.
       PG_HOST: postgres
       REDIS_HOST: redis
+      DATABASE_URL: postgresql://docmind:${PG_PASSWORD:-docmind}@postgres:5432/docmind
     ports:
-      - "4000:4000"
+      - "4500:4500"
     depends_on:
       postgres:
         condition: service_healthy
@@ -69,7 +87,7 @@ services:
       migrate:
         condition: service_completed_successfully
     healthcheck:
-      test: [ "CMD", "wget", "-qO-", "http://localhost:4000/health" ]
+      test: [ "CMD", "wget", "-qO-", "http://localhost:4500/health" ]
       interval: 15s
       timeout: 5s
       retries: 5
@@ -79,21 +97,17 @@ services:
 
   web:
     build:
-      context: ./frontend
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: frontend/Dockerfile
       target: app
       args:
-        # Baked into the client bundle — must be the URL *your browser*
-        # can reach. localhost:4000 works because we publish that port above.
-        NEXT_PUBLIC_API_URL: http://localhost:4000/api
+        NEXT_PUBLIC_API_URL: http://localhost:4500/api
     container_name: docmind-local-web
     restart: unless-stopped
     environment:
-      # Server-side fetches (Server Components) go straight to the
-      # api container over the Docker network — mirrors API_BASE_URL_SERVER
-      API_BASE_URL_SERVER: http://api:4000/api
+      API_BASE_URL_SERVER: http://api:4500/api
     ports:
-      - "3000:3000"
+      - "3400:3000"
     depends_on:
       - api
     healthcheck:

@@ -1,33 +1,18 @@
-/**
- * Resolves the correct API base URL depending on where the code runs.
- *
- * - Server Components / Route Handlers: use API_BASE_URL_SERVER
- *   This points directly at the api container over the internal Docker
- *   network in production, bypassing Caddy entirely.
- *
- * - Client Components ('use client'): use NEXT_PUBLIC_API_URL
- *   This is baked into the JS bundle at build time and must be a URL
- *   the browser can reach — the public domain in prod, localhost in dev.
- */
+import type { DocumentResponse, UploadResult, QueryResponse } from '@/types/api';
+
 function getBaseUrl(): string {
   if (typeof window === 'undefined') {
-    // Server-side: prefer internal container URL, fall back to public URL
     return (
       process.env.API_BASE_URL_SERVER ??
       process.env.NEXT_PUBLIC_API_URL ??
       'http://localhost:4000/api'
     );
   }
-  // Client-side: always use the public URL baked in at build time
   return process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4000/api';
 }
 
 export const API_BASE_URL = getBaseUrl();
 
-/**
- * Thin fetch wrapper — sets Content-Type and throws on non-2xx.
- * Extend with auth headers, retry logic, etc. as the app grows.
- */
 export async function apiFetch<T>(
   path: string,
   options: RequestInit = {},
@@ -47,4 +32,55 @@ export async function apiFetch<T>(
   }
 
   return res.json() as Promise<T>;
+}
+
+// ── Document endpoints ───────────────────────────────────────────
+
+export async function uploadDocument(
+  file: File,
+  title?: string,
+  visibility?: 'private' | 'public',
+): Promise<UploadResult> {
+  const formData = new FormData();
+  formData.append('file', file);
+  if (title) formData.append('title', title);
+  if (visibility) formData.append('visibility', visibility);
+
+  const url = `${API_BASE_URL}/v1/documents/upload`;
+  const res = await fetch(url, { method: 'POST', body: formData });
+
+  if (!res.ok) {
+    throw new Error(`Upload error ${res.status} — ${url}`);
+  }
+
+  return res.json() as Promise<UploadResult>;
+}
+
+export async function listDocuments(): Promise<DocumentResponse[]> {
+  return apiFetch<DocumentResponse[]>('/v1/documents');
+}
+
+export async function getDocument(id: string): Promise<DocumentResponse> {
+  return apiFetch<DocumentResponse>(`/v1/documents/${id}`);
+}
+
+export async function deleteDocument(id: string): Promise<void> {
+  const url = `${API_BASE_URL}/v1/documents/${id}`;
+  const res = await fetch(url, { method: 'DELETE' });
+
+  if (!res.ok) {
+    throw new Error(`Delete error ${res.status} — ${url}`);
+  }
+}
+
+// ── Chat endpoints ──────────────────────────────────────────────
+
+export async function queryDocuments(
+  query: string,
+  topK?: number,
+): Promise<QueryResponse> {
+  return apiFetch<QueryResponse>('/v1/chat/query', {
+    method: 'POST',
+    body: JSON.stringify({ query, topK }),
+  });
 }

@@ -12,6 +12,62 @@ datasource db {
   provider = "postgresql"
 }
 
+enum DocumentVisibility {
+  private
+  public
+}
+
+enum IngestionStatus {
+  pending
+  processing
+  ready
+  failed
+}
+
+enum SourceType {
+  pdf
+  markdown
+  txt
+  html
+  rtf
+}
+
+model Document {
+  id          String             @id @default(uuid())
+  userId      String
+  title       String
+  contentHash String             @unique
+  rawText     String?
+  sourceType  SourceType
+  visibility  DocumentVisibility @default(private)
+  status      IngestionStatus    @default(pending)
+  isActive    Boolean            @default(true)
+  version     Int                @default(1)
+  createdAt   DateTime           @default(now())
+  updatedAt   DateTime           @updatedAt
+
+  chunks Chunk[]
+
+  @@map("documents")
+}
+
+model Chunk {
+  id                String   @id @default(uuid())
+  documentId        String
+  content           String
+  contentHash       String
+  chunkIndex        Int
+  embeddingProvider String   @default("gemini-embedding-001")
+  embedding         Unsupported("vector(768)")
+  createdAt         DateTime @default(now())
+
+  document Document @relation(fields: [documentId], references: [id])
+
+  @@unique([documentId, contentHash])
+  @@index([documentId])
+  @@map("chunks")
+}
+
 model User {
   id        Int      @id @default(autoincrement())
   email     String   @unique
