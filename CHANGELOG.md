@@ -6,6 +6,43 @@ Format loosely follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## Retrieval Quality & Streaming — 2026-07-22
+
+### Added
+
+#### Retrieval Pipeline
+- **Keyword search layer** (F2.1) — migration `0007_keyword_search` adds a `content_tsv tsvector GENERATED ALWAYS AS (to_tsvector('english', content)) STORED` column and GIN index on `chunks`; `keywordSearch()` queries via `websearch_to_tsquery` with `$queryRaw` tagged templates (no string concatenation).
+- **Hybrid fusion with RRF** (F2.2) — vector and keyword searches run in parallel; results fused via Reciprocal Rank Fusion (k=60, constant in `rrf.ts`); cosine similarity floor via `RETRIEVAL_SIMILARITY_THRESHOLD` env var (default 0.3) prevents low-quality vector matches from entering fusion.
+- `RetrievedChunk` extended with `vectorScore`, `keywordScore`, and `fusedScore` fields; `similarity` retained as an alias for backward compat.
+- `rrf.ts` — pure, side-effect-free RRF function; tested independently in `rrf.spec.ts` (ties, one-sided inputs, k sensitivity).
+- **Re-ranking layer** (F2.3) — `Reranker` interface + `PassthroughReranker` default binding; top-20 fused candidates fed to reranker → top-K returned; interface is swappable without touching `RetrievalService`.
+- **Scoped `retrieve()` API** (F2.4) — all filters (`userId`, `visibility`, `isActive`, `status`) applied in SQL on both vector and keyword paths; `fetchChunksByIds` also scoped; `QueryController` is the single retrieval SQL consumer in the codebase.
+
+#### Citations
+- **End-to-end citations** (F2.5) — `documents.title` joined in retrieval SQL; context block numbers chunks `[1]`, `[2]`…; `parseCitations()` maps `[N]` markers back to `RetrievedChunk`; `CitationDto` (`marker`, `chunkId`, `documentTitle`, `snippet`) on query and stream responses.
+- Frontend renders `[N]` markers as inline superscript badges; hover/click reveals a tooltip popover with document title and 150-char snippet.
+
+#### SSE Streaming
+- **`POST /api/v1/chat/stream`** (F2.6) — NestJS `@Sse` endpoint backed by an RxJS `Observable`; emits sequenced events: `citations` (once retrieval completes, before first tokens), `token` (per provider chunk), `done`, `error`.
+- Upstream provider stream cancelled on HTTP connection close via `req.on('close', ...)` — verified via server logs; no hanging provider requests on tab close.
+- `useChatStream` hook (`frontend/src/hooks/useChatStream.ts`) — manages `EventSource` lifecycle, accumulates tokens, captures citations array, aborts on unmount / route navigation.
+- Chat page switched to streaming with progressive token rendering, inline citation badges, and a Stop button that aborts the stream mid-flight.
+
+#### Redis Caches
+- **Embedding cache** (F2.7) — key `embed:{sha256(normalized query)}`, TTL 86 400 s; deterministic embeddings make this lossless and effectively permanent per query string.
+- **Answer cache** (F2.7) — key `answer:{sha256(normalized query + sorted chunk IDs)}`, TTL 3 600 s; busts naturally when new content is ingested (chunk set changes → new key); applied on both the non-streaming query path and the SSE streaming path.
+- Cache hit/miss logged at debug level (`[cache:hit]` / `[cache:miss]`).
+
+#### Eval Harness
+- **Eval set** (F2.8) — `eval/retrieval.json` with 18 `(question, expectedChunkContentHash)` pairs built against a committed Postgres documentation fixture (`eval/fixtures/postgres-overview.txt`); thresholds (`hitAtK: 0.75`, `mrr: 0.6`) stored in the JSON.
+- **Eval runner** — `backend/scripts/eval-retrieval.ts` calls `RetrievalService.retrieve()` per case, computes hit@5 and MRR, prints a scorecard, exits non-zero under threshold.
+- `pnpm eval` wired in root `package.json`.
+
+#### Tests
+- `rrf.spec.ts` — RRF math verified on synthetic rank lists: correct score ordering, tie handling, one-sided (vector-only / keyword-only) inputs, k-sensitivity.
+- `retrieval.service.spec.ts` — hybrid retrieval integration cases: keyword path surfaces chunks the vector path ranks low; private doc excluded from `visibility: 'public'` queries; SQL scoping confirmed for userId, visibility, isActive, and status on both paths.
+- `query.controller.spec.ts` — citation parsing, `CitationDto` shape, streaming event sequence, cache hit/miss paths.
+
 ### Changed
 - Lint cleanup: fixed 65 ESLint errors (frontend + backend) — unsafe `any` assignments, unused imports, unhandled promises, `async`-without-`await` mocks, and `set-state-in-effect` violations.
 
