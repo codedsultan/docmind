@@ -3,9 +3,13 @@ import { PrismaService } from './prisma/prisma.service';
 
 @Injectable()
 export class AppService {
-  constructor(private readonly prisma: PrismaService) { }
+  constructor(private readonly prisma: PrismaService) {}
 
-  async getHello(): Promise<{ message: string; timestamp: string; db: string }> {
+  async getHello(): Promise<{
+    message: string;
+    timestamp: string;
+    db: string;
+  }> {
     // Raw query — works before any migrations, just proves connectivity
     await this.prisma.$queryRaw`SELECT 1`;
 

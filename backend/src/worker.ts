@@ -5,17 +5,17 @@ import { QueuesModule } from './queues/queues.module';
 
 // Minimal module — only boots queue processors, no HTTP server
 @Module({
-    imports: [
-        ConfigModule.forRoot({ isGlobal: true }),
-        QueuesModule,
-    ],
+  imports: [ConfigModule.forRoot({ isGlobal: true }), QueuesModule],
 })
-class WorkerAppModule { }
+class WorkerAppModule {}
 
 async function bootstrap() {
-    const app = await NestFactory.createApplicationContext(WorkerAppModule);
-    app.enableShutdownHooks();
-    console.log('🔧 Worker is running and consuming jobs...');
+  const app = await NestFactory.createApplicationContext(WorkerAppModule);
+  app.enableShutdownHooks();
+  console.log('🔧 Worker is running and consuming jobs...');
 }
 
-bootstrap();
+bootstrap().catch((err: unknown) => {
+  console.error('Worker failed to start:', err);
+  process.exit(1);
+});

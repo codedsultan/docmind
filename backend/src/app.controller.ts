@@ -1,12 +1,15 @@
-import { Controller, Get, Post, Body } from '@nestjs/common';
+import { Controller, Get, Post, Body, UseGuards } from '@nestjs/common';
 import { AppService } from './app.service';
 import { QueuesService } from './queues/queues.service';
+import { AuthGuard } from './common/guards/auth.guard';
+import { NotificationDto } from './common/dto/notification.dto';
+
 @Controller()
 export class AppController {
   constructor(
     private readonly appService: AppService,
     private readonly queuesService: QueuesService,
-  ) { }
+  ) {}
 
   @Get()
   getRoot() {
@@ -23,11 +26,13 @@ export class AppController {
     return { status: 'ok', timestamp: new Date().toISOString() };
   }
 
+  @UseGuards(AuthGuard)
   @Post('notify')
-  async notify(@Body() body: { userId: string; message: string; channel: 'email' | 'push' | 'sms' }) {
+  async notify(@Body() body: NotificationDto) {
     return this.queuesService.sendNotification(body);
   }
 
+  @UseGuards(AuthGuard)
   @Get('queue/stats')
   async queueStats() {
     return this.queuesService.getQueueStats();

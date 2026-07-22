@@ -1,0 +1,4 @@
+-- No-op migration: sourceType column was already converted to SourceType enum
+-- in migration 0003_chunk_schema via:
+--   ALTER TABLE "documents" ALTER COLUMN "sourceType" TYPE "SourceType" USING "sourceType"::"SourceType";
+-- This migration exists only to align the Prisma schema declaration with the DB reality.
