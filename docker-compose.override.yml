@@ -1,0 +1,49 @@
+# docker-compose.override.yml — hot-reload dev overrides
+# Automatically merged with docker-compose.yml by Docker Compose.
+#
+# Usage:
+#   docker compose up --build        # first run (builds deps stage, seeds named volumes)
+#   docker compose up                 # subsequent runs (fast — no rebuild)
+#   docker compose up --build api    # after changing backend dependencies
+#   docker compose up --build web    # after changing frontend dependencies
+#
+# How node_modules stay in sync:
+#   Named volumes (api_node_modules, web_node_modules) are populated from the
+#   image's deps stage on first run. They shadow the host's node_modules via the
+#   bind mount so Linux binaries are never overwritten by macOS host copies.
+#   To reset: docker compose down -v && docker compose up --build
+
+services:
+  api:
+    build:
+      target: deps
+    working_dir: /app/backend
+    command: >
+      sh -c "npx prisma generate && pnpm run start:dev"
+    volumes:
+      - ./backend:/app/backend
+      - api_node_modules:/app/backend/node_modules
+    environment:
+      NODE_ENV: development
+      CHOKIDAR_USEPOLLING: "true"
+      PROVIDER: groq
+      GROQ_MODEL: llama-3.1-8b-instant
+
+  web:
+    build:
+      target: deps
+    working_dir: /app/frontend
+    command: >
+      sh -c "PORT=3000 ./node_modules/.bin/next dev"
+    volumes:
+      - ./frontend:/app/frontend
+      - web_node_modules:/app/frontend/node_modules
+    environment:
+      NODE_ENV: development
+      PORT: "3000"
+      NEXT_PUBLIC_API_KEY: "${NEXT_PUBLIC_API_KEY:-dev-api-key-change-in-production}"
+      WATCHPACK_POLLING: "true"
+
+volumes:
+  api_node_modules:
+  web_node_modules:

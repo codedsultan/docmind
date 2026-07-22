@@ -1,5 +1,10 @@
 import type { DocumentResponse, UploadResult, QueryResponse } from '@/types/api';
 
+function getAuthHeaders(): Record<string, string> {
+  const key = process.env.NEXT_PUBLIC_API_KEY;
+  return key ? { Authorization: `Bearer ${key}` } : {};
+}
+
 function getBaseUrl(): string {
   if (typeof window === 'undefined') {
     return (
@@ -12,6 +17,7 @@ function getBaseUrl(): string {
 }
 
 export const API_BASE_URL = getBaseUrl();
+export { getAuthHeaders };
 
 export async function apiFetch<T>(
   path: string,
@@ -22,6 +28,7 @@ export async function apiFetch<T>(
   const res = await fetch(url, {
     headers: {
       'Content-Type': 'application/json',
+      ...getAuthHeaders(),
       ...options.headers,
     },
     ...options,
@@ -47,7 +54,7 @@ export async function uploadDocument(
   if (visibility) formData.append('visibility', visibility);
 
   const url = `${API_BASE_URL}/v1/documents/upload`;
-  const res = await fetch(url, { method: 'POST', body: formData });
+  const res = await fetch(url, { method: 'POST', headers: getAuthHeaders(), body: formData });
 
   if (!res.ok) {
     throw new Error(`Upload error ${res.status} — ${url}`);
@@ -66,7 +73,7 @@ export async function getDocument(id: string): Promise<DocumentResponse> {
 
 export async function deleteDocument(id: string): Promise<void> {
   const url = `${API_BASE_URL}/v1/documents/${id}`;
-  const res = await fetch(url, { method: 'DELETE' });
+  const res = await fetch(url, { method: 'DELETE', headers: getAuthHeaders() });
 
   if (!res.ok) {
     throw new Error(`Delete error ${res.status} — ${url}`);

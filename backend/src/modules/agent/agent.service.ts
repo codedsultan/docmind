@@ -1,13 +1,14 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { EventEmitter2 } from '@nestjs/event-emitter';
+import { Annotation, StateGraph, END, START } from '@langchain/langgraph';
 import {
   GENERATION_PROVIDER,
   GenerationProvider,
   ChatMessage,
 } from '../providers/generation.provider';
 import { ToolRegistryService } from '../tools/tool-registry.service';
-import { isToolProposal } from '../tools/tool-proposal.type';
+import { isToolProposal, ToolProposal } from '../tools/tool-proposal.type';
 import type { AgentSseEvent } from './agent-sse.types';
 
 const SYSTEM_PROMPT = `You are DocMind, an AI assistant that can use tools to help users explore their documents.
@@ -18,6 +19,29 @@ When you need to use a tool, respond with ONLY a valid JSON object (no markdown,
 When you have enough information to answer, respond with your answer as plain text.
 
 Use tools one at a time. After receiving a tool result, decide whether to use another tool or provide a final answer.`;
+
+// ── Agent graph state ─────────────────────────────────────────────
+const AgentState = Annotation.Root({
+  messages: Annotation<ChatMessage[]>({
+    value: (prev: ChatMessage[], update: ChatMessage[]) => [...prev, ...update],
+    default: () => [],
+  }),
+  systemPrompt: Annotation<string>(),
+  lastModelOutput: Annotation<string>(),
+  pendingToolCall: Annotation<{ name: string; params: unknown } | null>(),
+  toolResult: Annotation<{
+    toolName: string;
+    result?: unknown;
+    error?: string;
+  } | null>(),
+  proposal: Annotation<ToolProposal | null>(),
+  iterationCount: Annotation<number>({
+    value: (_: number, b: number) => b,
+    default: () => 0,
+  }),
+});
+
+type AgentStateType = typeof AgentState.State;
 
 interface ParsedAction {
   toolCall: { name: string; params: unknown } | null;
@@ -38,12 +62,14 @@ export class AgentService {
   }
 
   /**
-   * Run the agent loop and emit SSE events via the provided callback.
+   * Run the agent graph and emit SSE events via the provided callback.
    *
-   * Graph structure (LangGraph-inspired):
-   *   modelTurn → [toolDispatch → modelTurn]* → finalAnswer
+   * Graph:  modelTurn → [dispatch → toolDispatch → modelTurn]* → finalAnswer
    *
-   * Max-iteration guard prevents infinite loops.
+   * Pause-at-confirmation: the toolDispatch node returns a ToolProposal when
+   * the dispatched tool is `external_write`; the stream consumer emits
+   * `confirmation_required` and stops. Resume happens via POST /agent/confirm
+   * which calls ToolRegistryService.executeConfirmed() independently.
    */
   async run(
     query: string,
@@ -51,7 +77,6 @@ export class AgentService {
     emit: (event: AgentSseEvent) => void,
     queryId?: string,
   ): Promise<void> {
-    const messages: ChatMessage[] = [{ role: 'user', content: query }];
     const toolList = this.toolRegistry
       .listTools()
       .map((t) => `- ${t.name}: ${t.description}`)
@@ -61,97 +86,220 @@ export class AgentService {
       ? `${SYSTEM_PROMPT}\n\nAvailable tools:\n${toolList}`
       : SYSTEM_PROMPT;
 
-    const startMs = Date.now();
-    let iterations = 0;
+    const maxIter = this.maxIterations;
 
-    while (iterations < this.maxIterations) {
-      iterations++;
+    // ── Node: modelTurn ─────────────────────────────────────────────
+    const modelTurnNode = async (
+      state: AgentStateType,
+    ): Promise<{
+      lastModelOutput: string;
+      pendingToolCall: { name: string; params: unknown } | null;
+      iterationCount: number;
+    }> => {
+      const result = await this.provider.generate({
+        systemPrompt: state.systemPrompt,
+        messages: state.messages,
+        temperature: 0.1,
+      });
+      const action = this.parseModelOutput(result.content);
+      return {
+        lastModelOutput: result.content,
+        pendingToolCall: action.toolCall,
+        iterationCount: state.iterationCount + 1,
+      };
+    };
 
-      // ── modelTurn node ──────────────────────────────────────────
-      const modelResult = await this.modelTurnNode(systemPrompt, messages);
-      const action = this.parseModelOutput(modelResult);
-
-      if (!action.toolCall) {
-        // Final answer — stream tokens then done
-        for (const token of modelResult.split(' ')) {
-          emit({ type: 'token', data: token + ' ' });
-        }
-        emit({ type: 'done', data: '' });
-
-        this.eventEmitter.emit('TurnCompleted', {
-          userId,
-          queryId,
-          query,
-          provider: this.provider.model,
-          model: this.provider.model,
-          latencyBreakdown: { total: Date.now() - startMs },
-          cacheFlags: { embeddingHit: false, answerHit: false },
-          toolCallAuditIds: [],
-        });
-        return;
+    // ── Node: toolDispatch ──────────────────────────────────────────
+    const toolDispatchNode = async (
+      state: AgentStateType,
+    ): Promise<Partial<AgentStateType>> => {
+      if (!state.pendingToolCall) {
+        throw new Error(
+          'toolDispatch reached with no pendingToolCall in state',
+        );
       }
-
-      // ── toolDispatch node ───────────────────────────────────────
-      const { name, params } = action.toolCall;
-      emit({ type: 'tool_call', data: { toolName: name, params } });
-
+      const { name, params } = state.pendingToolCall;
       let dispatchResult: unknown;
+      let error: string | undefined;
+
       try {
         dispatchResult = await this.toolRegistry.dispatch(name, params, {
           userId,
           queryId,
         });
       } catch (err) {
-        const errorMsg = err instanceof Error ? err.message : String(err);
-        emit({
-          type: 'tool_result',
-          data: { toolName: name, error: errorMsg },
-        });
-        messages.push({ role: 'assistant', content: modelResult });
-        messages.push({
-          role: 'user',
-          content: `Tool "${name}" failed: ${errorMsg}`,
-        });
-        continue;
+        error = err instanceof Error ? err.message : String(err);
       }
 
-      if (isToolProposal(dispatchResult)) {
-        emit({ type: 'confirmation_required', data: dispatchResult });
-        // Pause the agent — resume happens via POST /agent/confirm
-        return;
+      // external_write: return proposal, stop the loop
+      if (dispatchResult !== undefined && isToolProposal(dispatchResult)) {
+        return {
+          proposal: dispatchResult as ToolProposal,
+          toolResult: null,
+          pendingToolCall: null,
+        };
       }
 
-      emit({
-        type: 'tool_result',
-        data: { toolName: name, result: dispatchResult },
-      });
-      messages.push({ role: 'assistant', content: modelResult });
-      messages.push({
-        role: 'user',
-        content: `Tool "${name}" returned: ${JSON.stringify(dispatchResult)}`,
-      });
+      const toolResultMsg: ChatMessage = error
+        ? {
+            role: 'user',
+            content: `Tool "${name}" failed: ${error}`,
+          }
+        : {
+            role: 'user',
+            content: `Tool "${name}" returned: ${JSON.stringify(dispatchResult)}`,
+          };
+
+      return {
+        messages: [
+          { role: 'assistant', content: state.lastModelOutput } as ChatMessage,
+          toolResultMsg,
+        ],
+        toolResult: {
+          toolName: name,
+          result: error ? undefined : dispatchResult,
+          error,
+        },
+        proposal: null,
+        pendingToolCall: null,
+      };
+    };
+
+    // ── Routing ─────────────────────────────────────────────────────
+    const routeAfterModelTurn = (state: AgentStateType): string =>
+      state.pendingToolCall ? 'dispatch' : 'finalAnswer';
+
+    const routeAfterToolDispatch = (state: AgentStateType): string => {
+      if (state.proposal) return 'proposalPending';
+      if (state.iterationCount >= maxIter) return 'maxReached';
+      return 'loop';
+    };
+
+    // ── Compile graph ───────────────────────────────────────────────
+    const graph = new StateGraph(AgentState)
+      .addNode('modelTurn', modelTurnNode)
+      .addNode('toolDispatch', toolDispatchNode)
+      .addConditionalEdges('modelTurn', routeAfterModelTurn, {
+        dispatch: 'toolDispatch',
+        finalAnswer: END,
+      })
+      .addConditionalEdges('toolDispatch', routeAfterToolDispatch, {
+        loop: 'modelTurn',
+        proposalPending: END,
+        maxReached: END,
+      })
+      .addEdge(START, 'modelTurn')
+      .compile();
+
+    // ── Stream execution ────────────────────────────────────────────
+    const startMs = Date.now();
+    let currentIterationCount = 0;
+    let lastNode = '';
+    let proposalEmitted = false;
+
+    for await (const stepOutput of await graph.stream(
+      {
+        messages: [{ role: 'user', content: query }],
+        systemPrompt,
+      },
+      { streamMode: 'updates' },
+    )) {
+      const output = stepOutput as Record<string, Partial<AgentStateType>>;
+
+      if ('modelTurn' in output) {
+        lastNode = 'modelTurn';
+        const update = output['modelTurn'];
+        if (update.iterationCount !== undefined) {
+          currentIterationCount = update.iterationCount;
+        }
+        if (update.pendingToolCall) {
+          emit({
+            type: 'tool_call',
+            data: {
+              toolName: update.pendingToolCall.name,
+              params: update.pendingToolCall.params,
+            },
+          });
+        } else {
+          // Final answer — word-tokenise for SSE token stream
+          const answer = update.lastModelOutput ?? '';
+          for (const token of answer.split(' ')) {
+            emit({ type: 'token', data: token + ' ' });
+          }
+        }
+      } else if ('toolDispatch' in output) {
+        lastNode = 'toolDispatch';
+        const update = output['toolDispatch'];
+
+        if (update.proposal && isToolProposal(update.proposal)) {
+          emit({ type: 'confirmation_required', data: update.proposal });
+          proposalEmitted = true;
+          break;
+        }
+
+        const tr = update.toolResult;
+        if (tr?.error) {
+          emit({
+            type: 'tool_result',
+            data: { toolName: tr.toolName, error: tr.error },
+          });
+        } else {
+          emit({
+            type: 'tool_result',
+            data: {
+              toolName: tr?.toolName ?? 'unknown',
+              result: tr?.result,
+            },
+          });
+        }
+      }
     }
 
-    emit({ type: 'done', data: 'max_iterations_reached' });
-  }
+    if (proposalEmitted) {
+      this.eventEmitter.emit('TurnCompleted', {
+        userId,
+        queryId,
+        query,
+        provider: this.provider.model,
+        model: this.provider.model,
+        latencyBreakdown: { total: Date.now() - startMs },
+        cacheFlags: { embeddingHit: false, answerHit: false },
+        toolCallAuditIds: [],
+      });
+      return;
+    }
 
-  // ── Private node implementations ────────────────────────────────
+    if (lastNode === 'toolDispatch' && currentIterationCount >= maxIter) {
+      emit({ type: 'done', data: 'max_iterations_reached' });
+      return;
+    }
 
-  private async modelTurnNode(
-    systemPrompt: string,
-    messages: ChatMessage[],
-  ): Promise<string> {
-    const result = await this.provider.generate({
-      systemPrompt,
-      messages,
-      temperature: 0.1,
+    // Final answer path
+    emit({ type: 'done', data: '' });
+
+    this.eventEmitter.emit('TurnCompleted', {
+      userId,
+      queryId,
+      query,
+      provider: this.provider.model,
+      model: this.provider.model,
+      latencyBreakdown: { total: Date.now() - startMs },
+      cacheFlags: { embeddingHit: false, answerHit: false },
+      toolCallAuditIds: [],
     });
-    return result.content;
   }
+
+  // ── Private helpers ─────────────────────────────────────────────
 
   private parseModelOutput(content: string): ParsedAction {
-    const trimmed = content.trim();
-    // Attempt to parse as a tool call JSON
+    let trimmed = content.trim();
+
+    // Strip markdown code fences (```json ... ``` or ``` ... ```)
+    const fenceMatch = trimmed.match(/^```(?:json)?\s*([\s\S]*?)```$/);
+    if (fenceMatch) {
+      trimmed = fenceMatch[1].trim();
+    }
+
     const jsonMatch = trimmed.match(/^\{[\s\S]*\}$/);
     if (jsonMatch) {
       try {
@@ -165,7 +313,7 @@ export class AgentService {
           };
         }
       } catch {
-        // Not valid JSON — treat as final answer
+        // Malformed JSON — treat as final answer, never surface raw content
       }
     }
     return { toolCall: null };

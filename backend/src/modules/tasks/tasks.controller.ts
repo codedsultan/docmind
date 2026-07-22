@@ -8,6 +8,7 @@ import {
   Patch,
   Post,
   Req,
+  UseGuards,
 } from '@nestjs/common';
 import {
   ApiBody,
@@ -18,6 +19,7 @@ import {
 } from '@nestjs/swagger';
 import { IsOptional, IsString, MaxLength, MinLength } from 'class-validator';
 import type { Request } from 'express';
+import { AuthGuard } from '../../common/guards/auth.guard';
 import { DEV_USER_ID } from '../../common/constants';
 import { TasksService } from './tasks.service';
 
@@ -70,6 +72,7 @@ export class UpdateTaskDto {
 
 @ApiTags('tasks')
 @Controller('v1/tasks')
+@UseGuards(AuthGuard)
 export class TasksController {
   constructor(private readonly tasksService: TasksService) {}
 

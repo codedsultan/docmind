@@ -12,9 +12,7 @@ const EMBEDDING_DIMENSIONS = 768;
 const BATCH_SIZE = 100;
 
 interface GeminiEmbedContentResponse {
-  embedding?: {
-    values?: number[];
-  };
+  values?: number[];
 }
 
 @Injectable()
@@ -57,8 +55,8 @@ export class GeminiEmbeddingProvider implements EmbeddingProvider {
       requests: texts.map((text) => ({
         model: `models/${GEMINI_EMBEDDING_MODEL}`,
         content: { parts: [{ text }] },
+        outputDimensionality: EMBEDDING_DIMENSIONS,
       })),
-      outputDimensionality: EMBEDDING_DIMENSIONS,
     });
 
     const response = await withRetry(
@@ -95,12 +93,12 @@ export class GeminiEmbeddingProvider implements EmbeddingProvider {
     }
 
     return data.embeddings.map((item) => {
-      if (!item.embedding?.values) {
+      if (!item.values) {
         throw new Error(
           'Unexpected Gemini API response: missing embedding values',
         );
       }
-      return item.embedding.values;
+      return item.values;
     });
   }
 }

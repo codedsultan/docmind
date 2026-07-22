@@ -6,6 +6,33 @@ Format loosely follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Auth guard hardening (SP8)
+- `AuthGuard` applied at the class level in `AgentController`, `NotesController`, `TasksController`, and `TraceController` — every route under these controllers now requires a valid `Authorization: Bearer <key>` header.
+- `AuthGuard` added to the `providers` list in each corresponding NestJS module so the DI container can resolve it.
+- E2E test `backend/test/auth-guard.e2e-spec.ts` dynamically iterates every registered `/v1/*` route and asserts it returns 401 without auth; explicitly covers `POST /v1/agent/confirm`.
+
+### LangGraph StateGraph migration (SP9)
+- `AgentService.run()` now builds a real `@langchain/langgraph` `StateGraph` per request: `modelTurn` node → conditional edge (`dispatch` / `finalAnswer`) → `toolDispatch` node → conditional edge (`loop` / `maxReached` / `proposalPending`).
+- SSE events are emitted by iterating the graph stream in `streamMode: "updates"`, one SSE event per node output, eliminating the manual `emit()` callback threading.
+- The Redis confirmation-token mechanism (`ToolRegistryService.executeConfirmed`) is **kept** — it runs independently of LangGraph; pause-at-confirmation means the graph stream ends when a `ToolProposal` is detected, and resume is a separate `POST /agent/confirm` call.
+- `@langchain/langgraph` was already installed; it is now actively used — no installed-but-unused dependency.
+
+### parseModelOutput fence stripping (SP10)
+- `AgentService.parseModelOutput()` now strips `\`\`\`json` and plain `\`\`\`` fences before attempting a JSON parse, so models that wrap their tool-call JSON in markdown blocks still trigger the correct tool dispatch.
+- Malformed JSON (missing brace, trailing comma) is caught silently and treated as a final-answer text response; raw JSON is never surfaced to the user.
+- Five new tests covering fenced JSON, plain-fence JSON, trailing-comma JSON, genuinely malformed JSON, and JSON-with-leading-prose.
+
+### send_email_digest — deferred transactional send (SP12)
+- **Decision (2026-07-22):** The portfolio demo does **not** wire a live transactional email provider. The `send_email_digest` tool delegates to `EmailLogService` which logs a formatted preview to the server console instead of sending. This is intentional and documented — the goal is to demonstrate risk-tiered tool dispatch and the propose → confirm → audit flow, not email delivery. When a real provider (Resend / Postmark) is needed, swap the `EMAIL_SERVICE` binding in `email.module.ts` to a concrete sender; no other code changes are required.
+
+### Citation utility (SP13)
+- `backend/src/modules/query/citation.util.ts` — shared `buildAllCitations()` and `parseCitations()` helpers extracted from `query.controller.ts` (which had an inline `parseCitations` method) and `query-documents.tool.ts` (which had duplicate inline citation mapping). Both callers now import from the shared module.
+
+### Eval runner (SP11)
+- `backend/eval/retrieval.json` — three-case eval fixture (thresholds set to 0.0 so it passes against an empty DB; raise once real documents are seeded).
+- `backend/eval/run-eval.ts` — standalone eval runner bootstrapping the NestJS application context, computing hit@k and MRR per case, logging a results table, and exiting non-zero on threshold failures.
+- `pnpm eval` script wired in `backend/package.json`.
+
 ## Agentic Layer — 2026-07-22
 
 ### Added

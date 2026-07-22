@@ -102,6 +102,7 @@ services:
       target: app
       args:
         NEXT_PUBLIC_API_URL: http://localhost:4500/api
+        NEXT_PUBLIC_API_KEY: ${NEXT_PUBLIC_API_KEY:-dev-api-key-change-in-production}
     container_name: docmind-local-web
     restart: unless-stopped
     environment:

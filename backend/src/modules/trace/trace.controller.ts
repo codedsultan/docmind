@@ -6,14 +6,17 @@ import {
   Query,
   Req,
   Res,
+  UseGuards,
 } from '@nestjs/common';
 import { ApiOperation, ApiQuery, ApiResponse, ApiTags } from '@nestjs/swagger';
 import type { Request, Response } from 'express';
+import { AuthGuard } from '../../common/guards/auth.guard';
 import { DEV_USER_ID } from '../../common/constants';
 import { TraceService } from './trace.service';
 
 @ApiTags('admin')
 @Controller('v1/admin/traces')
+@UseGuards(AuthGuard)
 export class TraceController {
   constructor(private readonly traceService: TraceService) {}
 

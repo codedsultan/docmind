@@ -2,7 +2,7 @@
 
 import { useCallback, useRef, useState } from 'react';
 import type { Citation } from '@/types/api';
-import { API_BASE_URL } from '@/lib/api';
+import { API_BASE_URL, getAuthHeaders } from '@/lib/api';
 
 export interface ToolProposal {
   type: 'proposal';
@@ -67,7 +67,7 @@ export function useChatStream(): UseChatStreamReturn {
       try {
         const res = await fetch(`${API_BASE_URL}/v1/chat/stream`, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
           body: JSON.stringify({ query, topK }),
           signal: controller.signal,
         });

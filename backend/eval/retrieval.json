@@ -1,0 +1,29 @@
+[
+  {
+    "id": "case-01",
+    "query": "What documents are available about machine learning?",
+    "expectedDocIds": [],
+    "hitAtK": 3,
+    "hitAtKThreshold": 0.0,
+    "mrrThreshold": 0.0,
+    "note": "Threshold 0.0 — passes with empty DB. Raise to ≥0.5 once ML documents are seeded."
+  },
+  {
+    "id": "case-02",
+    "query": "Summarize the key findings from the research papers",
+    "expectedDocIds": [],
+    "hitAtK": 3,
+    "hitAtKThreshold": 0.0,
+    "mrrThreshold": 0.0,
+    "note": "Threshold 0.0 — passes with empty DB. Raise to ≥0.5 once research documents are seeded."
+  },
+  {
+    "id": "case-03",
+    "query": "What are the project requirements and specifications?",
+    "expectedDocIds": [],
+    "hitAtK": 3,
+    "hitAtKThreshold": 0.0,
+    "mrrThreshold": 0.0,
+    "note": "Threshold 0.0 — passes with empty DB. Raise to ≥0.5 once spec documents are seeded."
+  }
+]

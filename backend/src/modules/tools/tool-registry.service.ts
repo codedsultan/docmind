@@ -7,6 +7,7 @@ import {
 } from '@nestjs/common';
 import { randomUUID } from 'crypto';
 import type Redis from 'ioredis';
+import { Prisma } from '../../../generated/prisma/client';
 import { RiskTier } from '../../common/constants';
 import { PrismaService } from '../../prisma/prisma.service';
 import { REDIS_CLIENT } from '../../redis/redis.module';
@@ -127,7 +128,7 @@ export class ToolRegistryService {
       userId: ctx.userId,
       toolName,
       riskTier: tool.riskTier,
-      params: params as Record<string, unknown>,
+      params,
       result,
       confirmed: true,
       error,
@@ -157,7 +158,7 @@ export class ToolRegistryService {
       userId: ctx.userId,
       toolName: tool.name,
       riskTier: tool.riskTier,
-      params: params as Record<string, unknown>,
+      params,
       result,
       confirmed: false,
       error,
@@ -195,7 +196,7 @@ export class ToolRegistryService {
     userId: string;
     toolName: string;
     riskTier: string;
-    params: Record<string, unknown>;
+    params: unknown;
     result?: unknown;
     confirmed: boolean;
     error?: string;
@@ -207,9 +208,11 @@ export class ToolRegistryService {
           toolName: data.toolName,
           riskTier: data.riskTier as
             'read' | 'internal_write' | 'external_write',
-          params: data.params,
+          params: data.params as Prisma.InputJsonValue,
           result:
-            data.result !== undefined ? (data.result as object) : undefined,
+            data.result !== undefined
+              ? (data.result as Prisma.InputJsonValue)
+              : undefined,
           confirmed: data.confirmed,
           error: data.error,
         },

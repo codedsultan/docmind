@@ -8,6 +8,7 @@ import {
   Patch,
   Post,
   Req,
+  UseGuards,
 } from '@nestjs/common';
 import {
   ApiBody,
@@ -18,6 +19,7 @@ import {
 } from '@nestjs/swagger';
 import { IsOptional, IsString, MaxLength, MinLength } from 'class-validator';
 import type { Request } from 'express';
+import { AuthGuard } from '../../common/guards/auth.guard';
 import { DEV_USER_ID } from '../../common/constants';
 import { NotesService } from './notes.service';
 
@@ -44,6 +46,7 @@ export class UpdateNoteDto {
 
 @ApiTags('notes')
 @Controller('v1/notes')
+@UseGuards(AuthGuard)
 export class NotesController {
   constructor(private readonly notesService: NotesService) {}
 

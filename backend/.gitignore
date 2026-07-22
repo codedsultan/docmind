@@ -18,6 +18,8 @@ lerna-debug.log*
 # Tests
 /coverage
 /.nyc_output
+test/app.e2e-spec.js
+/dist/test/
 
 # IDEs and editors
 /.idea

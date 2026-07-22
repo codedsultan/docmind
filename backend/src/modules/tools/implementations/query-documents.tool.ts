@@ -6,6 +6,7 @@ import {
   GENERATION_PROVIDER,
   GenerationProvider,
 } from '../../providers/generation.provider';
+import { buildAllCitations } from '../../query/citation.util';
 import type { Tool, ToolContext } from '../tool.interface';
 
 const schema = z.object({
@@ -52,12 +53,7 @@ export class QueryDocumentsTool implements Tool<Params> {
       ],
     });
 
-    const citations = chunks.map((c, i) => ({
-      marker: `[${i + 1}]`,
-      chunkId: c.chunkId,
-      documentTitle: c.documentTitle,
-      snippet: c.content.slice(0, 200),
-    }));
+    const citations = buildAllCitations(chunks, 200);
 
     return { answer: result.content, citations };
   }

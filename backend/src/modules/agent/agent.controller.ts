@@ -8,6 +8,7 @@ import {
   Post,
   Req,
   Sse,
+  UseGuards,
 } from '@nestjs/common';
 import {
   ApiBody,
@@ -22,6 +23,7 @@ import type { Request } from 'express';
 import type Redis from 'ioredis';
 import { DEV_USER_ID } from '../../common/constants';
 import { REDIS_CLIENT } from '../../redis/redis.module';
+import { AuthGuard } from '../../common/guards/auth.guard';
 import { ToolRegistryService } from '../tools/tool-registry.service';
 import { AgentService } from './agent.service';
 import type { AgentSseEvent } from './agent-sse.types';
@@ -55,6 +57,7 @@ interface SseMessage {
 
 @ApiTags('agent')
 @Controller('v1/agent')
+@UseGuards(AuthGuard)
 export class AgentController {
   private readonly logger = new Logger(AgentController.name);
 

@@ -164,3 +164,71 @@ describe('AgentService', () => {
     expect(registry.dispatch).toHaveBeenCalledTimes(2);
   });
 });
+
+// ── SP10: parseModelOutput fencing / malformed JSON ────────────────
+
+describe('AgentService — parseModelOutput fence stripping', () => {
+  it('extracts a tool call from JSON wrapped in ```json fences', async () => {
+    const fenced = '```json\n{"tool":"search","params":{"query":"test"}}\n```';
+    const provider = makeProvider([fenced, 'Done.']);
+    const registry = makeRegistry();
+    registry.dispatch.mockResolvedValue({ results: [] });
+    const service = await buildService(provider, registry);
+
+    const events = await collectEvents(service, 'Search for test');
+
+    expect(events.some((e) => e.type === 'tool_call')).toBe(true);
+    expect(events.some((e) => e.type === 'done')).toBe(true);
+  });
+
+  it('extracts a tool call from JSON wrapped in plain ``` fences', async () => {
+    const fenced = '```\n{"tool":"search","params":{"query":"test"}}\n```';
+    const provider = makeProvider([fenced, 'Done.']);
+    const registry = makeRegistry();
+    registry.dispatch.mockResolvedValue({ results: [] });
+    const service = await buildService(provider, registry);
+
+    const events = await collectEvents(service, 'Search for test');
+
+    expect(events.some((e) => e.type === 'tool_call')).toBe(true);
+    expect(events.some((e) => e.type === 'done')).toBe(true);
+  });
+
+  it('treats genuinely malformed JSON as a final answer without leaking raw content', async () => {
+    // Missing closing brace — definitely malformed
+    const malformed = '{"tool":"search","params":{"query":"test"}';
+    const provider = makeProvider([malformed]);
+    const service = await buildService(provider, makeRegistry());
+
+    const events = await collectEvents(service, 'Test malformed');
+
+    // Must emit tokens (final answer path) and done — never a tool_call
+    expect(events.some((e) => e.type === 'token')).toBe(true);
+    expect(events.some((e) => e.type === 'done')).toBe(true);
+    expect(events.some((e) => e.type === 'tool_call')).toBe(false);
+  });
+
+  it('treats JSON with trailing comma (invalid) as a final answer', async () => {
+    const withTrailingComma = '{"tool":"search","params":{"query":"test"},}';
+    const provider = makeProvider([withTrailingComma]);
+    const service = await buildService(provider, makeRegistry());
+
+    const events = await collectEvents(service, 'Test trailing comma');
+
+    expect(events.some((e) => e.type === 'done')).toBe(true);
+    expect(events.some((e) => e.type === 'tool_call')).toBe(false);
+  });
+
+  it('treats JSON with leading prose as a final answer', async () => {
+    const withProse =
+      'Sure, let me search for that.\n\n{"tool":"search","params":{}}';
+    const provider = makeProvider([withProse]);
+    const service = await buildService(provider, makeRegistry());
+
+    const events = await collectEvents(service, 'Test prose');
+
+    // The regex requires the JSON to be the ONLY content; prose disqualifies it
+    expect(events.some((e) => e.type === 'done')).toBe(true);
+    expect(events.some((e) => e.type === 'tool_call')).toBe(false);
+  });
+});
