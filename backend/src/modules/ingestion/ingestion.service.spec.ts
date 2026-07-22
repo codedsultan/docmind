@@ -16,7 +16,7 @@ const makeFile = (
   fieldname: 'file',
   encoding: '7bit',
   size: 20,
-  stream: undefined as any,
+  stream: undefined as unknown as NodeJS.ReadableStream,
   destination: '',
   filename: '',
   path: '',
