@@ -1,6 +1,7 @@
 import { Test } from '@nestjs/testing';
 import { NotFoundException } from '@nestjs/common';
 import { getQueueToken } from '@nestjs/bullmq';
+import { Readable } from 'stream';
 import { IngestionService } from './ingestion.service';
 import { PrismaService } from '../../prisma/prisma.service';
 import { ParserService } from './parsers/parser.service';
@@ -16,7 +17,7 @@ const makeFile = (
   fieldname: 'file',
   encoding: '7bit',
   size: 20,
-  stream: undefined as unknown as NodeJS.ReadableStream,
+  stream: undefined as unknown as Readable,
   destination: '',
   filename: '',
   path: '',
