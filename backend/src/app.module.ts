@@ -12,6 +12,11 @@ import { IngestionModule } from './modules/ingestion/ingestion.module';
 import { ProvidersModule } from './modules/providers/providers.module';
 import { RetrievalModule } from './modules/retrieval/retrieval.module';
 import { QueryModule } from './modules/query/query.module';
+import { ToolsModule } from './modules/tools/tools.module';
+import { AgentModule } from './modules/agent/agent.module';
+import { NotesModule } from './modules/notes/notes.module';
+import { TasksModule } from './modules/tasks/tasks.module';
+import { TraceModule } from './modules/trace/trace.module';
 import * as Joi from 'joi';
 
 const configValidationSchema = Joi.object({
@@ -21,6 +26,9 @@ const configValidationSchema = Joi.object({
   GEMINI_API_KEY: Joi.string().required(),
   PROVIDER: Joi.string().valid('gemini', 'groq').default('gemini'),
   INTERNAL_API_KEY: Joi.string().required(),
+  EMAIL_DIGEST_RECIPIENT: Joi.string().email().optional(),
+  EMAIL_MODE: Joi.string().valid('log', 'send').default('log'),
+  AGENT_MAX_ITERATIONS: Joi.number().integer().min(1).max(50).default(10),
 }).unknown(true);
 
 @Module({
@@ -39,6 +47,11 @@ const configValidationSchema = Joi.object({
     ProvidersModule,
     RetrievalModule,
     QueryModule,
+    ToolsModule,
+    AgentModule,
+    NotesModule,
+    TasksModule,
+    TraceModule,
   ],
   controllers: [AppController],
   providers: [AppService, { provide: APP_GUARD, useClass: ThrottlerGuard }],
