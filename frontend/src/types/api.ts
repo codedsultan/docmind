@@ -22,7 +22,15 @@ export interface QuerySource {
   similarity: number;
 }
 
+export interface Citation {
+  marker: string;
+  chunkId: string;
+  documentTitle: string;
+  snippet: string;
+}
+
 export interface QueryResponse {
   answer: string;
   sources: QuerySource[];
+  citations: Citation[];
 }

@@ -4,16 +4,34 @@ import { QueryController } from './query.controller';
 import { RetrievalService } from '../retrieval/retrieval.service';
 import { GENERATION_PROVIDER } from '../providers/generation.provider';
 import { AuthGuard } from '../../common/guards/auth.guard';
+import { REDIS_CLIENT } from '../../redis/redis.module';
+import type { RetrievedChunk } from '../retrieval/retrieval.service';
 
 const mockRetrievalService = { retrieve: jest.fn() };
 const mockGenerationProvider = { generate: jest.fn() };
+const mockRedis = {
+  get: jest.fn().mockResolvedValue(null),
+  setex: jest.fn().mockResolvedValue('OK'),
+};
 
-// Bypass AuthGuard for unit tests — security is tested via e2e
 class NoopAuthGuard {
   canActivate() {
     return true;
   }
 }
+
+const makeChunk = (
+  overrides: Partial<RetrievedChunk> = {},
+): RetrievedChunk => ({
+  chunkId: 'c1',
+  documentId: 'd1',
+  documentTitle: 'My Doc',
+  content: 'Context A',
+  chunkIndex: 0,
+  similarity: 0.9,
+  fusedScore: 0.9,
+  ...overrides,
+});
 
 describe('QueryController', () => {
   let controller: QueryController;
@@ -25,6 +43,7 @@ describe('QueryController', () => {
         { provide: RetrievalService, useValue: mockRetrievalService },
         { provide: GENERATION_PROVIDER, useValue: mockGenerationProvider },
         { provide: ConfigService, useValue: { get: jest.fn() } },
+        { provide: REDIS_CLIENT, useValue: mockRedis },
       ],
     })
       .overrideGuard(AuthGuard)
@@ -38,16 +57,7 @@ describe('QueryController', () => {
 
   describe('query()', () => {
     it('returns answer and sources when chunks are retrieved', async () => {
-      const chunks = [
-        {
-          chunkId: 'c1',
-          documentId: 'd1',
-          content: 'Context A',
-          chunkIndex: 0,
-          similarity: 0.9,
-        },
-      ];
-      mockRetrievalService.retrieve.mockResolvedValue(chunks);
+      mockRetrievalService.retrieve.mockResolvedValue([makeChunk()]);
       mockGenerationProvider.generate.mockResolvedValue({
         content: 'The answer is A',
       });
@@ -87,7 +97,7 @@ describe('QueryController', () => {
       );
     });
 
-    it('includes "no context" note in the user message when no chunks are found', async () => {
+    it('includes "no context" note when no chunks are found', async () => {
       mockRetrievalService.retrieve.mockResolvedValue([]);
       mockGenerationProvider.generate.mockResolvedValue({
         content: 'I do not know',
@@ -97,51 +107,163 @@ describe('QueryController', () => {
 
       const generateCall = (
         mockGenerationProvider.generate.mock.calls[0] as unknown[]
-      )?.[0] as { messages: Array<{ content: string }> };
-      const userMsg: string = generateCall.messages[0].content;
-      expect(userMsg).toContain('No relevant context');
+      )?.[0] as {
+        messages: Array<{ content: string }>;
+      };
+      expect(generateCall.messages[0].content).toContain('No relevant context');
     });
 
-    it('includes retrieved chunk content in the prompt when chunks are found', async () => {
-      const chunks = [
-        {
-          chunkId: 'c1',
-          documentId: 'd1',
-          content: 'important fact',
-          chunkIndex: 0,
-          similarity: 0.85,
-        },
-      ];
+    it('numbers chunks as [1], [2]… in the prompt context block', async () => {
+      const chunks = [makeChunk({ content: 'important fact' })];
       mockRetrievalService.retrieve.mockResolvedValue(chunks);
       mockGenerationProvider.generate.mockResolvedValue({ content: 'answer' });
 
       await controller.query({ query: 'tell me about important fact' });
 
-      const generateCall = (
+      const call = (
         mockGenerationProvider.generate.mock.calls[0] as unknown[]
-      )?.[0] as { messages: Array<{ content: string }> };
-      const userMsg: string = generateCall.messages[0].content;
+      )?.[0] as {
+        messages: Array<{ content: string }>;
+      };
+      const userMsg = call.messages[0].content;
       expect(userMsg).toContain('important fact');
-      expect(userMsg).toContain('[source:1]');
+      expect(userMsg).toContain('[1]');
     });
 
     it('truncates source content preview to 200 characters', async () => {
-      const longContent = 'x'.repeat(500);
-      const chunks = [
-        {
-          chunkId: 'c1',
-          documentId: 'd1',
-          content: longContent,
-          chunkIndex: 0,
-          similarity: 0.8,
-        },
-      ];
+      const chunks = [makeChunk({ content: 'x'.repeat(500) })];
       mockRetrievalService.retrieve.mockResolvedValue(chunks);
       mockGenerationProvider.generate.mockResolvedValue({ content: 'ok' });
 
       const result = await controller.query({ query: 'q' });
 
       expect(result.sources[0].content.length).toBe(200);
+    });
+
+    it('returns a citations array parsed from [N] markers in the answer', async () => {
+      const chunks = [
+        makeChunk({
+          chunkId: 'c1',
+          documentTitle: 'Doc One',
+          content: 'First source content',
+        }),
+        makeChunk({
+          chunkId: 'c2',
+          documentTitle: 'Doc Two',
+          content: 'Second source content',
+        }),
+      ];
+      mockRetrievalService.retrieve.mockResolvedValue(chunks);
+      mockGenerationProvider.generate.mockResolvedValue({
+        content: 'Based on [1] we know X. See also [2].',
+      });
+
+      const result = await controller.query({ query: 'q' });
+
+      expect(result.citations).toHaveLength(2);
+      expect(result.citations[0]).toMatchObject({
+        marker: '[1]',
+        chunkId: 'c1',
+        documentTitle: 'Doc One',
+      });
+      expect(result.citations[1]).toMatchObject({
+        marker: '[2]',
+        chunkId: 'c2',
+        documentTitle: 'Doc Two',
+      });
+    });
+
+    it('returns empty citations when answer has no [N] markers', async () => {
+      mockRetrievalService.retrieve.mockResolvedValue([makeChunk()]);
+      mockGenerationProvider.generate.mockResolvedValue({
+        content: 'Just an answer.',
+      });
+
+      const result = await controller.query({ query: 'q' });
+      expect(result.citations).toEqual([]);
+    });
+  });
+
+  describe('parseCitations()', () => {
+    it('parses distinct [N] markers and maps them to chunks', () => {
+      const chunks = [
+        makeChunk({
+          chunkId: 'ca',
+          documentTitle: 'A',
+          content: 'alpha content',
+        }),
+        makeChunk({
+          chunkId: 'cb',
+          documentTitle: 'B',
+          content: 'beta content',
+        }),
+      ];
+      const citations = controller.parseCitations(
+        'See [1] and [2] for details.',
+        chunks,
+      );
+      expect(citations).toHaveLength(2);
+      expect(citations[0].marker).toBe('[1]');
+      expect(citations[1].marker).toBe('[2]');
+    });
+
+    it('deduplicates repeated [N] markers', () => {
+      const chunks = [
+        makeChunk({ chunkId: 'c1', documentTitle: 'D', content: 'x' }),
+      ];
+      const citations = controller.parseCitations(
+        '[1] says this and [1] confirms it.',
+        chunks,
+      );
+      expect(citations).toHaveLength(1);
+    });
+
+    it('ignores out-of-range markers', () => {
+      const chunks = [makeChunk()];
+      const citations = controller.parseCitations(
+        '[5] is out of range',
+        chunks,
+      );
+      expect(citations).toHaveLength(0);
+    });
+
+    it('snippet is capped at 150 chars', () => {
+      const chunks = [makeChunk({ content: 'z'.repeat(300) })];
+      const citations = controller.parseCitations('[1]', chunks);
+      expect(citations[0].snippet.length).toBe(150);
+    });
+  });
+
+  describe('answer cache', () => {
+    it('returns cached response without calling the generation provider', async () => {
+      const cached: unknown = {
+        answer: 'cached answer',
+        sources: [],
+        citations: [],
+      };
+      mockRedis.get.mockResolvedValueOnce(JSON.stringify(cached));
+      mockRetrievalService.retrieve.mockResolvedValue([]);
+
+      const result = await controller.query({ query: 'q' });
+
+      expect(result.answer).toBe('cached answer');
+      expect(mockGenerationProvider.generate).not.toHaveBeenCalled();
+    });
+
+    it('stores the response in Redis on cache miss', async () => {
+      mockRedis.get.mockResolvedValueOnce(null);
+      mockRetrievalService.retrieve.mockResolvedValue([]);
+      mockGenerationProvider.generate.mockResolvedValue({
+        content: 'fresh answer',
+      });
+
+      await controller.query({ query: 'q' });
+
+      expect(mockRedis.setex).toHaveBeenCalledWith(
+        expect.stringMatching(/^answer:/),
+        3600,
+        expect.any(String),
+      );
     });
   });
 });

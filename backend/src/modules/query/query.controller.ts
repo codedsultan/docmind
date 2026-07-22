@@ -1,4 +1,12 @@
-import { Body, Controller, Inject, Post, UseGuards } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Inject,
+  Logger,
+  Optional,
+  Post,
+  UseGuards,
+} from '@nestjs/common';
 import {
   ApiBody,
   ApiOperation,
@@ -6,8 +14,13 @@ import {
   ApiResponse,
   ApiTags,
 } from '@nestjs/swagger';
+import { createHash } from 'crypto';
+import type Redis from 'ioredis';
 import { AuthGuard } from '../../common/guards/auth.guard';
-import { RetrievalService } from '../retrieval/retrieval.service';
+import {
+  RetrievalService,
+  RetrievedChunk,
+} from '../retrieval/retrieval.service';
 import {
   GENERATION_PROVIDER,
   GenerationProvider,
@@ -21,6 +34,9 @@ import {
   Min,
   Max,
 } from 'class-validator';
+import { REDIS_CLIENT } from '../../redis/redis.module';
+
+export const ANSWER_CACHE_TTL = 3600;
 
 export class QueryDto {
   @ApiProperty({
@@ -46,6 +62,13 @@ export class QueryDto {
   topK?: number;
 }
 
+export class CitationDto {
+  @ApiProperty() marker!: string;
+  @ApiProperty() chunkId!: string;
+  @ApiProperty() documentTitle!: string;
+  @ApiProperty() snippet!: string;
+}
+
 export class QuerySourceDto {
   @ApiProperty() chunkId!: string;
   @ApiProperty() documentId!: string;
@@ -56,59 +79,95 @@ export class QuerySourceDto {
 export class QueryResponseDto {
   @ApiProperty() answer!: string;
   @ApiProperty({ type: [QuerySourceDto] }) sources!: QuerySourceDto[];
+  @ApiProperty({ type: [CitationDto] }) citations!: CitationDto[];
+}
+
+export interface Citation {
+  marker: string;
+  chunkId: string;
+  documentTitle: string;
+  snippet: string;
 }
 
 @ApiTags('chat')
 @UseGuards(AuthGuard)
 @Controller('v1/chat')
 export class QueryController {
+  private readonly logger = new Logger(QueryController.name);
+
   constructor(
     private readonly retrievalService: RetrievalService,
     @Inject(GENERATION_PROVIDER)
     private readonly generationProvider: GenerationProvider,
+    @Optional()
+    @Inject(REDIS_CLIENT)
+    private readonly redis: Redis | null,
   ) {}
 
   @Post('query')
   @ApiOperation({ summary: 'Ask a question about ingested documents' })
   @ApiBody({ type: QueryDto })
-  @ApiResponse({
-    status: 200,
-    description: 'Answer with source chunks',
-    type: QueryResponseDto,
-  })
+  @ApiResponse({ status: 200, type: QueryResponseDto })
   @ApiResponse({ status: 400, description: 'Invalid query input' })
   async query(@Body() dto: QueryDto): Promise<QueryResponseDto> {
     const topK = dto.topK ?? 5;
-
-    // Retrieve relevant chunks
     const chunks = await this.retrievalService.retrieve(dto.query, { topK });
 
-    // Generate answer from context
-    const answer = await this.generateAnswer(dto.query, chunks);
+    const sortedChunkIds = [...chunks.map((c) => c.chunkId)].sort().join(',');
+    const answerCacheKey = `answer:${createHash('sha256')
+      .update(dto.query.trim().toLowerCase() + sortedChunkIds)
+      .digest('hex')}`;
 
-    return {
+    // Cache busts naturally: when new chunks are ingested the sorted chunk IDs change
+    // → a new cache key is derived, so stale answers are never served.
+    if (this.redis) {
+      const cached = await this.redis.get(answerCacheKey);
+      if (cached) {
+        this.logger.debug('[cache:hit] answer');
+        return JSON.parse(cached) as QueryResponseDto;
+      }
+      this.logger.debug('[cache:miss] answer');
+    }
+
+    const answer = await this.generateAnswer(dto.query, chunks);
+    const citations = this.parseCitations(answer, chunks);
+
+    const response: QueryResponseDto = {
       answer,
+      citations,
       sources: chunks.map((c) => ({
         chunkId: c.chunkId,
         documentId: c.documentId,
-        content: c.content.slice(0, 200), // Truncate source preview
+        content: c.content.slice(0, 200),
         similarity: c.similarity,
       })),
     };
+
+    if (this.redis) {
+      await this.redis.setex(
+        answerCacheKey,
+        ANSWER_CACHE_TTL,
+        JSON.stringify(response),
+      );
+    }
+
+    return response;
   }
 
-  private async generateAnswer(
+  // ── Helpers ──────────────────────────────────────────────────
+
+  private generateAnswer(
     query: string,
-    chunks: { content: string; chunkId: string }[],
+    chunks: RetrievedChunk[],
   ): Promise<string> {
     const systemPrompt =
       'You are a helpful AI assistant that answers questions based on provided context. ' +
       'Answer only from the context provided below. If the context does not contain enough ' +
       'information to answer the question, say you do not know. Do not make up information. ' +
-      'Cite relevant sources inline using [source:N] notation where N is the source number.';
+      'Cite sources inline using [N] markers exactly as numbered in the context block.';
 
     const context = chunks
-      .map((c, i) => `[source:${i + 1}] ${c.content}`)
+      .map((c, i) => `[${i + 1}] ${c.content}`)
       .join('\n\n');
 
     const userMessage =
@@ -116,13 +175,39 @@ export class QueryController {
         ? `Context:\n${context}\n\nQuestion: ${query}`
         : `Question: ${query}\n\nNote: No relevant context was found in the documents.`;
 
-    const result = await this.generationProvider.generate({
-      systemPrompt,
-      messages: [{ role: 'user', content: userMessage }],
-      temperature: 0.3,
-      maxOutputTokens: 1024,
-    });
+    return this.generationProvider
+      .generate({
+        systemPrompt,
+        messages: [{ role: 'user', content: userMessage }],
+        temperature: 0.3,
+        maxOutputTokens: 1024,
+      })
+      .then((r) => r.content);
+  }
 
-    return result.content;
+  /**
+   * Parses [N] markers from the generated answer and maps them back to the
+   * corresponding source chunks (1-indexed).
+   */
+  parseCitations(answer: string, chunks: RetrievedChunk[]): Citation[] {
+    const found = new Set<number>();
+    const markerRe = /\[(\d+)\]/g;
+    let match: RegExpExecArray | null;
+    while ((match = markerRe.exec(answer)) !== null) {
+      const n = parseInt(match[1], 10);
+      if (n >= 1 && n <= chunks.length) found.add(n);
+    }
+
+    return [...found]
+      .sort((a, b) => a - b)
+      .map((n) => {
+        const chunk = chunks[n - 1];
+        return {
+          marker: `[${n}]`,
+          chunkId: chunk.chunkId,
+          documentTitle: chunk.documentTitle,
+          snippet: chunk.content.slice(0, 150),
+        };
+      });
   }
 }

@@ -6,6 +6,7 @@ import { AppService } from './app.service';
 import { ConfigModule } from '@nestjs/config';
 import { EventEmitterModule } from '@nestjs/event-emitter';
 import { PrismaModule } from './prisma/prisma.module';
+import { RedisModule } from './redis/redis.module';
 import { QueuesModule } from './queues/queues.module';
 import { IngestionModule } from './modules/ingestion/ingestion.module';
 import { ProvidersModule } from './modules/providers/providers.module';
@@ -32,6 +33,7 @@ const configValidationSchema = Joi.object({
     }),
     EventEmitterModule.forRoot(),
     PrismaModule,
+    RedisModule,
     QueuesModule,
     IngestionModule,
     ProvidersModule,

@@ -11,7 +11,8 @@
     "test:frontend": "pnpm --filter docmind-web test:coverage",
     "lint:backend": "pnpm --filter docmind-api lint",
     "lint:frontend": "pnpm --filter docmind-web lint",
-    "test": "pnpm --filter docmind-api test && pnpm --filter docmind-web test"
+    "test": "pnpm --filter docmind-api test && pnpm --filter docmind-web test",
+    "eval": "ts-node backend/scripts/eval-retrieval.ts"
   },
   "pnpm": {
     "onlyBuiltDependencies": [
