@@ -35,9 +35,9 @@ export class IngestionService {
     ).slice(0, 255);
     const sourceType = this.inferSourceType(file.mimetype, file.originalname);
 
-    // Check for duplicate content
+    // Check for duplicate content scoped to this user
     const existing = await this.prisma.document.findUnique({
-      where: { contentHash },
+      where: { userId_contentHash: { userId, contentHash } },
     });
 
     if (existing) {

@@ -15,4 +15,7 @@ async function bootstrap() {
   console.log('🔧 Worker is running and consuming jobs...');
 }
 
-bootstrap();
+bootstrap().catch((err: unknown) => {
+  console.error('Worker failed to start:', err);
+  process.exit(1);
+});

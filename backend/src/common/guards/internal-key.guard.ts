@@ -9,7 +9,10 @@ import { timingSafeEqual } from 'crypto';
 import { Request } from 'express';
 
 /**
- * Phase 1-4 placeholder guard for internal/admin endpoints.
+ * Staged guard for internal/admin endpoints — intentionally unused in Phases 1-2.
+ * - Phase 3: protects /admin/traces and other admin-only internal endpoints.
+ * - Phase 8: protects admin-public-chat endpoints.
+ *
  * Checks the X-Internal-Key header against INTERNAL_API_KEY config value.
  * Uses timing-safe comparison to prevent timing attacks.
  * Swap for a real JWT/session guard in Phase 5.

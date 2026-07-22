@@ -41,14 +41,14 @@ export class ParserService {
     }
   }
 
-  private async parseMarkdown(buffer: Buffer): Promise<ParseResult> {
+  private parseMarkdown(buffer: Buffer): ParseResult {
     const text = buffer.toString('utf-8');
     // Strip frontmatter (---...---)
     const cleaned = text.replace(/^---[\s\S]*?---\n*/, '').trim();
     return { text: cleaned, sourceType: 'markdown' };
   }
 
-  private async parseText(buffer: Buffer): Promise<ParseResult> {
+  private parseText(buffer: Buffer): ParseResult {
     const text = buffer.toString('utf-8');
     return { text, sourceType: 'txt' };
   }

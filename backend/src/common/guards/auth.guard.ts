@@ -6,7 +6,6 @@ import {
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { timingSafeEqual } from 'crypto';
-import { Request } from 'express';
 
 @Injectable()
 export class AuthGuard implements CanActivate {
@@ -18,9 +17,10 @@ export class AuthGuard implements CanActivate {
       throw new UnauthorizedException('API not configured for direct access');
     }
 
-    const request = context.switchToHttp().getRequest<Request>();
-    const raw = request.headers['authorization'];
-    const authHeader = Array.isArray(raw) ? raw[0] : raw;
+    const request = context.switchToHttp().getRequest<{
+      headers: { authorization?: string };
+    }>();
+    const authHeader = request.headers.authorization;
 
     if (!authHeader) {
       throw new UnauthorizedException('Missing authorization header');

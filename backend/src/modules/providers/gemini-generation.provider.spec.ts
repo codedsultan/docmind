@@ -14,6 +14,8 @@ describe('GeminiGenerationProvider', () => {
   };
 
   beforeEach(async () => {
+    jest.useFakeTimers();
+
     const module = await Test.createTestingModule({
       providers: [
         GeminiGenerationProvider,
@@ -26,8 +28,17 @@ describe('GeminiGenerationProvider', () => {
   });
 
   afterEach(() => {
+    jest.useRealTimers();
     jest.restoreAllMocks();
   });
+
+  /** Helper: advances fake timers by enough time for withRetry's exponential backoff. */
+  async function exhaustTimers(): Promise<void> {
+    // withRetry defaults: 3 retries, base delay 1000ms → max backoff ~1+2+4=7s
+    for (let i = 0; i < 10; i++) {
+      await jest.advanceTimersByTimeAsync(2000);
+    }
+  }
 
   describe('generate', () => {
     const defaultOpts = {
@@ -38,7 +49,7 @@ describe('GeminiGenerationProvider', () => {
     it('returns content string on success', async () => {
       fetchSpy.mockResolvedValue({
         ok: true,
-        json: async () => ({
+        json: () => ({
           candidates: [
             {
               content: { parts: [{ text: 'Hi there!' }] },
@@ -64,16 +75,48 @@ describe('GeminiGenerationProvider', () => {
       });
     });
 
-    it('throws when API response is not ok', async () => {
+    it('throws when API persistently returns 500 (after retries)', async () => {
       fetchSpy.mockResolvedValue({
         ok: false,
         status: 500,
-        text: async () => 'Internal Server Error',
+        text: () => 'Internal Server Error',
       });
 
-      await expect(provider.generate(defaultOpts)).rejects.toThrow(
+      const promise = provider.generate(defaultOpts);
+      // Create assertion before advancing timers to attach rejection handler early
+      const assertion = expect(promise).rejects.toThrow(
         'Generation API error: 500',
       );
+      await exhaustTimers();
+      await assertion;
+      expect(fetchSpy).toHaveBeenCalledTimes(3);
+    });
+
+    it('recovers after a transient 429 then succeeds', async () => {
+      fetchSpy
+        .mockResolvedValueOnce({
+          ok: false,
+          status: 429,
+          text: () => 'rate limited',
+        })
+        .mockResolvedValueOnce({
+          ok: true,
+          json: () => ({
+            candidates: [
+              {
+                content: { parts: [{ text: 'recovered' }] },
+                finishReason: 'STOP',
+              },
+            ],
+          }),
+        });
+
+      const promise = provider.generate(defaultOpts);
+      await exhaustTimers();
+      const result = await promise;
+
+      expect(fetchSpy).toHaveBeenCalledTimes(2);
+      expect(result.content).toBe('recovered');
     });
   });
 
@@ -84,6 +127,7 @@ describe('GeminiGenerationProvider', () => {
     };
 
     it('yields tokens from mocked SSE response', async () => {
+      await exhaustTimers();
       const sseEvents = [
         'data: {"candidates":[{"content":{"parts":[{"text":"Once "}]}}]}',
         'data: {"candidates":[{"content":{"parts":[{"text":"upon "}]}}]}',
@@ -123,7 +167,7 @@ describe('GeminiGenerationProvider', () => {
       fetchSpy.mockResolvedValue({
         ok: false,
         status: 401,
-        text: async () => 'Unauthorized',
+        text: () => 'Unauthorized',
       });
 
       const gen = provider.generateStream(defaultOpts);

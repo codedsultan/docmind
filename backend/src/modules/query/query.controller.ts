@@ -1,4 +1,4 @@
-import { Body, Controller, Inject, Post } from '@nestjs/common';
+import { Body, Controller, Inject, Post, UseGuards } from '@nestjs/common';
 import {
   ApiBody,
   ApiOperation,
@@ -6,6 +6,7 @@ import {
   ApiResponse,
   ApiTags,
 } from '@nestjs/swagger';
+import { AuthGuard } from '../../common/guards/auth.guard';
 import { RetrievalService } from '../retrieval/retrieval.service';
 import {
   GENERATION_PROVIDER,
@@ -58,6 +59,7 @@ export class QueryResponseDto {
 }
 
 @ApiTags('chat')
+@UseGuards(AuthGuard)
 @Controller('v1/chat')
 export class QueryController {
   constructor(

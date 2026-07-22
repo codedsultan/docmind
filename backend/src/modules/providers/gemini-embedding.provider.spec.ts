@@ -14,6 +14,8 @@ describe('GeminiEmbeddingProvider', () => {
   };
 
   beforeEach(async () => {
+    jest.useFakeTimers();
+
     const module = await Test.createTestingModule({
       providers: [
         GeminiEmbeddingProvider,
@@ -26,6 +28,7 @@ describe('GeminiEmbeddingProvider', () => {
   });
 
   afterEach(() => {
+    jest.useRealTimers();
     jest.restoreAllMocks();
   });
 
@@ -45,6 +48,13 @@ describe('GeminiEmbeddingProvider', () => {
     });
   });
 
+  /** Helper: advances fake timers by enough time for withRetry's exponential backoff. */
+  async function exhaustTimers(): Promise<void> {
+    for (let i = 0; i < 10; i++) {
+      await jest.advanceTimersByTimeAsync(2000);
+    }
+  }
+
   describe('embed', () => {
     it('returns empty embeddings for empty text array', async () => {
       const result = await provider.embed({ texts: [] });
@@ -58,7 +68,7 @@ describe('GeminiEmbeddingProvider', () => {
       const mockEmbedding = Array(768).fill(0.1);
       fetchSpy.mockResolvedValue({
         ok: true,
-        json: async () => ({
+        json: () => ({
           embeddings: [
             { embedding: { values: mockEmbedding } },
             { embedding: { values: mockEmbedding } },
@@ -79,7 +89,7 @@ describe('GeminiEmbeddingProvider', () => {
       const mockEmbedding = Array(768).fill(0);
       const makeBatchResponse = (count: number) => ({
         ok: true,
-        json: async () => ({
+        json: () => ({
           embeddings: Array(count).fill({
             embedding: { values: mockEmbedding },
           }),
@@ -91,23 +101,53 @@ describe('GeminiEmbeddingProvider', () => {
         .mockResolvedValueOnce(makeBatchResponse(100))
         .mockResolvedValueOnce(makeBatchResponse(1));
 
-      const texts = Array(101).fill('text');
+      const texts = new Array<string>(101).fill('text');
       const result = await provider.embed({ texts });
 
       expect(fetchSpy).toHaveBeenCalledTimes(2);
       expect(result.embeddings).toHaveLength(101);
     });
 
-    it('throws an Error when API returns 429', async () => {
+    it('throws an Error when API persistently returns 429 (after retries)', async () => {
       fetchSpy.mockResolvedValue({
         ok: false,
         status: 429,
-        text: async () => 'Rate limit exceeded',
+        text: () => 'Rate limit exceeded',
       });
 
-      await expect(provider.embed({ texts: ['test'] })).rejects.toThrow(
+      const promise = provider.embed({ texts: ['test'] });
+      // Create assertion before advancing timers to attach rejection handler early
+      const assertion = expect(promise).rejects.toThrow(
         'Embedding API error: 429',
       );
+      await exhaustTimers();
+      await assertion;
+      // Retried 3 times before giving up
+      expect(fetchSpy).toHaveBeenCalledTimes(3);
+    });
+
+    it('recovers after a transient 429 (retry succeeds)', async () => {
+      const mockEmbedding = Array(768).fill(0.5);
+      fetchSpy
+        .mockResolvedValueOnce({
+          ok: false,
+          status: 429,
+          text: () => 'rate limited',
+        })
+        .mockResolvedValueOnce({
+          ok: true,
+          json: () => ({
+            embeddings: [{ embedding: { values: mockEmbedding } }],
+          }),
+        });
+
+      const promise = provider.embed({ texts: ['text'] });
+      await exhaustTimers();
+      const result = await promise;
+
+      expect(fetchSpy).toHaveBeenCalledTimes(2);
+      expect(result.embeddings).toHaveLength(1);
+      expect(result.embeddings[0]).toHaveLength(768);
     });
   });
 });

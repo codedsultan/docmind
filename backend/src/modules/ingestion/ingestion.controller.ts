@@ -8,7 +8,6 @@ import {
   UploadedFile,
   UseInterceptors,
   UseGuards,
-  BadRequestException,
   ParseFilePipe,
   MaxFileSizeValidator,
   FileTypeValidator,

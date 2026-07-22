@@ -6,6 +6,7 @@ import {
   GenerateResult,
   ChatMessage,
 } from './generation.provider';
+import { withRetry } from './retry.util';
 
 const GEMINI_GENERATION_MODEL = 'gemini-2.0-flash';
 
@@ -49,23 +50,31 @@ export class GeminiGenerationProvider implements GenerationProvider {
 
   async generate(opts: GenerateOptions): Promise<GenerateResult> {
     const url = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_GENERATION_MODEL}:generateContent`;
-
     const contents = this.buildContents(opts.systemPrompt, opts.messages);
-
-    const response = await fetch(url, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-goog-api-key': this.apiKey,
+    const body = JSON.stringify({
+      contents,
+      generationConfig: {
+        temperature: opts.temperature ?? 0.3,
+        maxOutputTokens: opts.maxOutputTokens ?? 1024,
       },
-      body: JSON.stringify({
-        contents,
-        generationConfig: {
-          temperature: opts.temperature ?? 0.3,
-          maxOutputTokens: opts.maxOutputTokens ?? 1024,
-        },
-      }),
     });
+
+    const response = await withRetry(
+      () =>
+        fetch(url, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'x-goog-api-key': this.apiKey,
+          },
+          body,
+        }),
+      {},
+      (attempt, status) =>
+        this.logger.warn(
+          `Gemini generate ${status ?? 'network error'} on attempt ${attempt + 1}`,
+        ),
+    );
 
     if (!response.ok) {
       const errorText = await response.text();
@@ -81,23 +90,31 @@ export class GeminiGenerationProvider implements GenerationProvider {
 
   async *generateStream(opts: GenerateOptions): AsyncIterable<string> {
     const url = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_GENERATION_MODEL}:streamGenerateContent?alt=sse`;
-
     const contents = this.buildContents(opts.systemPrompt, opts.messages);
-
-    const response = await fetch(url, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-goog-api-key': this.apiKey,
+    const body = JSON.stringify({
+      contents,
+      generationConfig: {
+        temperature: opts.temperature ?? 0.3,
+        maxOutputTokens: opts.maxOutputTokens ?? 1024,
       },
-      body: JSON.stringify({
-        contents,
-        generationConfig: {
-          temperature: opts.temperature ?? 0.3,
-          maxOutputTokens: opts.maxOutputTokens ?? 1024,
-        },
-      }),
     });
+
+    const response = await withRetry(
+      () =>
+        fetch(url, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'x-goog-api-key': this.apiKey,
+          },
+          body,
+        }),
+      {},
+      (attempt, status) =>
+        this.logger.warn(
+          `Gemini stream ${status ?? 'network error'} on attempt ${attempt + 1}`,
+        ),
+    );
 
     if (!response.ok) {
       const errorText = await response.text();
@@ -117,7 +134,10 @@ export class GeminiGenerationProvider implements GenerationProvider {
 
     try {
       while (true) {
-        const { done, value } = await reader.read();
+        const { done, value } = (await reader.read()) as {
+          done: boolean;
+          value: Uint8Array | undefined;
+        };
         if (done) break;
 
         buffer += decoder.decode(value, { stream: true });

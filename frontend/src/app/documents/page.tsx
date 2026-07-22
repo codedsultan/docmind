@@ -1,6 +1,7 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useState } from 'react';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   uploadDocument,
   listDocuments,
@@ -9,27 +10,30 @@ import {
 import type { DocumentResponse } from '@/types/api';
 
 export default function DocumentsPage() {
-  const [documents, setDocuments] = useState<DocumentResponse[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const queryClient = useQueryClient();
   const [uploading, setUploading] = useState(false);
   const [uploadMessage, setUploadMessage] = useState<string | null>(null);
 
-  const fetchDocuments = useCallback(async () => {
-    try {
-      setError(null);
-      const docs = await listDocuments();
-      setDocuments(docs);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to load documents');
-    } finally {
-      setLoading(false);
-    }
-  }, []);
+  const {
+    data: documents = [],
+    isLoading: loading,
+    error,
+  } = useQuery<DocumentResponse[]>({
+    queryKey: ['documents'],
+    queryFn: listDocuments,
+  });
 
-  useEffect(() => {
-    fetchDocuments();
-  }, [fetchDocuments]);
+  const deleteMutation = useMutation({
+    mutationFn: deleteDocument,
+    onSuccess: (_data, id) => {
+      queryClient.setQueryData<DocumentResponse[]>(['documents'], (old) =>
+        old?.filter((d) => d.id !== id) ?? [],
+      );
+    },
+    onError: (err) => {
+      console.error('Delete failed:', err);
+    },
+  });
 
   const handleUpload = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
@@ -52,7 +56,7 @@ export default function DocumentsPage() {
       );
       setUploadMessage(result.message);
       form.reset();
-      await fetchDocuments();
+      queryClient.invalidateQueries({ queryKey: ['documents'] });
     } catch (err) {
       setUploadMessage(
         `Upload failed: ${err instanceof Error ? err.message : 'Unknown error'}`,
@@ -62,14 +66,12 @@ export default function DocumentsPage() {
     }
   };
 
-  const handleDelete = async (id: string) => {
-    try {
-      await deleteDocument(id);
-      setDocuments((prev) => prev.filter((d) => d.id !== id));
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Delete failed');
-    }
-  };
+  const handleDelete = useCallback(
+    (id: string) => {
+      deleteMutation.mutate(id);
+    },
+    [deleteMutation],
+  );
 
   return (
     <div className="mx-auto max-w-3xl space-y-8 p-6">
@@ -137,9 +139,9 @@ export default function DocumentsPage() {
       </form>
 
       {/* Error message */}
-      {error && (
+      {(error || deleteMutation.error) && (
         <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700">
-          {error}
+          {error instanceof Error ? error.message : deleteMutation.error instanceof Error ? deleteMutation.error.message : 'An error occurred'}
         </div>
       )}
 

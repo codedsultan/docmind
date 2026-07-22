@@ -88,11 +88,11 @@ export class IngestionProcessor extends WorkerHost {
       // 3. Store chunks in database
       for (let i = 0; i < chunks.length; i++) {
         const chunk = chunks[i];
-        const embedding = embeddings[i];
+        const vectorStr = `[${embeddings[i].join(',')}]`;
 
         await this.prisma.$executeRaw`
           INSERT INTO "chunks" ("documentId", "content", "contentHash", "chunkIndex", "embedding", "createdAt")
-          VALUES (${documentId}, ${chunk.content}, ${chunk.contentHash}, ${chunk.chunkIndex}, ${embedding}::vector, NOW())
+          VALUES (${documentId}, ${chunk.content}, ${chunk.contentHash}, ${chunk.chunkIndex}, ${vectorStr}::vector, NOW())
           ON CONFLICT ("documentId", "contentHash") DO NOTHING
         `;
       }

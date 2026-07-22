@@ -36,7 +36,7 @@ model Document {
   id          String             @id @default(uuid())
   userId      String
   title       String
-  contentHash String             @unique
+  contentHash String
   rawText     String?
   sourceType  SourceType
   visibility  DocumentVisibility @default(private)
@@ -48,6 +48,7 @@ model Document {
 
   chunks Chunk[]
 
+  @@unique([userId, contentHash])
   @@map("documents")
 }
 
@@ -69,7 +70,7 @@ model Chunk {
 }
 
 model User {
-  id        Int      @id @default(autoincrement())
+  id        String   @id @default(uuid())
   email     String   @unique
   name      String?
   createdAt DateTime @default(now())

@@ -18,6 +18,7 @@ export interface RetrievalOptions {
   userId?: string;
   topK?: number;
   similarityThreshold?: number;
+  visibility?: 'private' | 'public';
 }
 
 @Injectable()
@@ -49,24 +50,43 @@ export class RetrievalService {
 
     const queryEmbedding = embeddings[0];
     const embeddingStr = `[${queryEmbedding.join(',')}]`;
+    const visibility = options?.visibility;
 
-    // Vector search via $queryRaw
-    const results = await this.prisma.$queryRaw<RetrievedChunkRaw[]>`
-      SELECT
-        c.id AS "chunkId",
-        c.content,
-        c."documentId",
-        c."chunkIndex",
-        1 - (c.embedding <=> ${embeddingStr}::vector) AS similarity
-      FROM chunks c
-      JOIN documents d ON d.id = c."documentId"
-      WHERE d."userId" = ${userId}
-        AND d."isActive" = true
-        AND d.status = 'ready'
-        AND 1 - (c.embedding <=> ${embeddingStr}::vector) >= ${threshold}
-      ORDER BY c.embedding <=> ${embeddingStr}::vector
-      LIMIT ${topK}
-    `;
+    // Vector search via $queryRaw — two branches to avoid dynamic SQL concatenation
+    const results = visibility
+      ? await this.prisma.$queryRaw<RetrievedChunkRaw[]>`
+          SELECT
+            c.id AS "chunkId",
+            c.content,
+            c."documentId",
+            c."chunkIndex",
+            1 - (c.embedding <=> ${embeddingStr}::vector) AS similarity
+          FROM chunks c
+          JOIN documents d ON d.id = c."documentId"
+          WHERE d."userId" = ${userId}
+            AND d."isActive" = true
+            AND d.status = 'ready'
+            AND d.visibility = ${visibility}::"DocumentVisibility"
+            AND 1 - (c.embedding <=> ${embeddingStr}::vector) >= ${threshold}
+          ORDER BY c.embedding <=> ${embeddingStr}::vector
+          LIMIT ${topK}
+        `
+      : await this.prisma.$queryRaw<RetrievedChunkRaw[]>`
+          SELECT
+            c.id AS "chunkId",
+            c.content,
+            c."documentId",
+            c."chunkIndex",
+            1 - (c.embedding <=> ${embeddingStr}::vector) AS similarity
+          FROM chunks c
+          JOIN documents d ON d.id = c."documentId"
+          WHERE d."userId" = ${userId}
+            AND d."isActive" = true
+            AND d.status = 'ready'
+            AND 1 - (c.embedding <=> ${embeddingStr}::vector) >= ${threshold}
+          ORDER BY c.embedding <=> ${embeddingStr}::vector
+          LIMIT ${topK}
+        `;
 
     return results.map((r) => ({
       chunkId: r.chunkId,

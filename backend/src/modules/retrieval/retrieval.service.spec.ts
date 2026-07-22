@@ -92,8 +92,8 @@ describe('RetrievalService', () => {
 
       // The first argument to $queryRaw is a TemplateStringsArray (tagged template),
       // so we inspect the full call args for the userId string value.
-      const callArgs = prismaQueryRaw.mock.calls[0];
-      const flatArgs = callArgs.flat(Infinity);
+      const callArgs = prismaQueryRaw.mock.calls[0] as unknown[];
+      const flatArgs = callArgs?.flat(Infinity);
       expect(flatArgs).toContain('specific-user-123');
     });
 
@@ -108,6 +108,69 @@ describe('RetrievalService', () => {
 
       expect(results).toEqual([]);
       expect(prismaQueryRaw).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('visibility scoping', () => {
+    it('passes the visibility value to the raw query when provided', async () => {
+      prismaQueryRaw.mockResolvedValue([]);
+
+      await service.retrieve('query', {
+        userId: 'user-A',
+        visibility: 'public',
+      });
+
+      expect(prismaQueryRaw).toHaveBeenCalledTimes(1);
+      const flatArgs = (prismaQueryRaw.mock.calls[0] as unknown[])?.flat(
+        Infinity,
+      );
+      expect(flatArgs).toContain('public');
+    });
+
+    it('does not include a visibility parameter when visibility is omitted', async () => {
+      prismaQueryRaw.mockResolvedValue([]);
+
+      await service.retrieve('query', { userId: 'user-A' });
+
+      expect(prismaQueryRaw).toHaveBeenCalledTimes(1);
+      const flatArgs = (prismaQueryRaw.mock.calls[0] as unknown[])?.flat(
+        Infinity,
+      );
+      // Neither 'public' nor 'private' should appear as a bound parameter
+      expect(flatArgs).not.toContain('public');
+      expect(flatArgs).not.toContain('private');
+    });
+
+    it('returns empty array when visibility filter causes DB to return no rows', async () => {
+      // Simulate DB filtering out private docs from another user when public is requested
+      prismaQueryRaw.mockResolvedValue([]);
+
+      const results = await service.retrieve('query', {
+        userId: 'user-B',
+        visibility: 'public',
+      });
+
+      expect(results).toEqual([]);
+    });
+
+    it('returns chunks when visibility matches the stored document visibility', async () => {
+      const publicChunk = {
+        chunkId: 'chunk-pub',
+        content: 'public content',
+        documentId: 'doc-pub',
+        chunkIndex: BigInt(0),
+        similarity: 0.88,
+      };
+      prismaQueryRaw.mockResolvedValue([publicChunk]);
+
+      const results = await service.retrieve('query', {
+        userId: 'user-A',
+        visibility: 'public',
+      });
+
+      expect(results).toHaveLength(1);
+      expect(results[0].chunkId).toBe('chunk-pub');
+      expect(results[0].similarity).toBe(0.88);
     });
   });
 });

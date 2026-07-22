@@ -5,6 +5,7 @@ import {
   EmbedOptions,
   EmbedResult,
 } from './embedding.provider';
+import { withRetry } from './retry.util';
 
 const GEMINI_EMBEDDING_MODEL = 'gemini-embedding-001';
 const EMBEDDING_DIMENSIONS = 768;
@@ -52,21 +53,30 @@ export class GeminiEmbeddingProvider implements EmbeddingProvider {
 
   private async embedBatch(texts: string[]): Promise<number[][]> {
     const url = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_EMBEDDING_MODEL}:batchEmbedContents`;
-
-    const response = await fetch(url, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-goog-api-key': this.apiKey,
-      },
-      body: JSON.stringify({
-        requests: texts.map((text) => ({
-          model: `models/${GEMINI_EMBEDDING_MODEL}`,
-          content: { parts: [{ text }] },
-        })),
-        outputDimensionality: EMBEDDING_DIMENSIONS,
-      }),
+    const body = JSON.stringify({
+      requests: texts.map((text) => ({
+        model: `models/${GEMINI_EMBEDDING_MODEL}`,
+        content: { parts: [{ text }] },
+      })),
+      outputDimensionality: EMBEDDING_DIMENSIONS,
     });
+
+    const response = await withRetry(
+      () =>
+        fetch(url, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'x-goog-api-key': this.apiKey,
+          },
+          body,
+        }),
+      {},
+      (attempt, status) =>
+        this.logger.warn(
+          `Gemini embed ${status ?? 'network error'} on attempt ${attempt + 1}`,
+        ),
+    );
 
     if (!response.ok) {
       const errorText = await response.text();
