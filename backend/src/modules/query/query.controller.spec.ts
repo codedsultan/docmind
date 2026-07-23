@@ -5,6 +5,7 @@ import { RetrievalService } from '../retrieval/retrieval.service';
 import { GENERATION_PROVIDER } from '../providers/generation.provider';
 import { AuthGuard } from '../../common/guards/auth.guard';
 import { REDIS_CLIENT } from '../../redis/redis.module';
+import { parseCitations } from './citation.util';
 import type { RetrievedChunk } from '../retrieval/retrieval.service';
 
 const mockRetrievalService = { retrieve: jest.fn() };
@@ -184,7 +185,7 @@ describe('QueryController', () => {
     });
   });
 
-  describe('parseCitations()', () => {
+  describe('parseCitations() utility', () => {
     it('parses distinct [N] markers and maps them to chunks', () => {
       const chunks = [
         makeChunk({
@@ -198,10 +199,7 @@ describe('QueryController', () => {
           content: 'beta content',
         }),
       ];
-      const citations = controller.parseCitations(
-        'See [1] and [2] for details.',
-        chunks,
-      );
+      const citations = parseCitations('See [1] and [2] for details.', chunks);
       expect(citations).toHaveLength(2);
       expect(citations[0].marker).toBe('[1]');
       expect(citations[1].marker).toBe('[2]');
@@ -211,7 +209,7 @@ describe('QueryController', () => {
       const chunks = [
         makeChunk({ chunkId: 'c1', documentTitle: 'D', content: 'x' }),
       ];
-      const citations = controller.parseCitations(
+      const citations = parseCitations(
         '[1] says this and [1] confirms it.',
         chunks,
       );
@@ -220,16 +218,13 @@ describe('QueryController', () => {
 
     it('ignores out-of-range markers', () => {
       const chunks = [makeChunk()];
-      const citations = controller.parseCitations(
-        '[5] is out of range',
-        chunks,
-      );
+      const citations = parseCitations('[5] is out of range', chunks);
       expect(citations).toHaveLength(0);
     });
 
-    it('snippet is capped at 150 chars', () => {
+    it('snippet is capped at 150 chars by default', () => {
       const chunks = [makeChunk({ content: 'z'.repeat(300) })];
-      const citations = controller.parseCitations('[1]', chunks);
+      const citations = parseCitations('[1]', chunks);
       expect(citations[0].snippet.length).toBe(150);
     });
   });

@@ -19,6 +19,8 @@ RUN pnpm install --frozen-lockfile --filter docmind-web...
 FROM base AS build
 ARG NEXT_PUBLIC_API_URL=http://localhost:4000/api
 ENV NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL}
+ARG NEXT_PUBLIC_API_KEY=dev-api-key-change-in-production
+ENV NEXT_PUBLIC_API_KEY=${NEXT_PUBLIC_API_KEY}
 
 COPY --from=deps /app/node_modules ./node_modules
 COPY --from=deps /app/frontend/node_modules ./frontend/node_modules

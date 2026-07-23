@@ -47,6 +47,24 @@ export default function RootLayout({
             >
               Chat
             </Link>
+            <Link
+              href="/notes"
+              className="text-sm text-gray-600 hover:text-gray-900"
+            >
+              Notes
+            </Link>
+            <Link
+              href="/tasks"
+              className="text-sm text-gray-600 hover:text-gray-900"
+            >
+              Tasks
+            </Link>
+            <Link
+              href="/admin/traces"
+              className="text-sm text-gray-600 hover:text-gray-900"
+            >
+              Traces
+            </Link>
           </nav>
         </header>
         <main className="flex-1"><Providers>{children}</Providers></main>

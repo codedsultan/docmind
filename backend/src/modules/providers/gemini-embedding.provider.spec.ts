@@ -69,10 +69,7 @@ describe('GeminiEmbeddingProvider', () => {
       fetchSpy.mockResolvedValue({
         ok: true,
         json: () => ({
-          embeddings: [
-            { embedding: { values: mockEmbedding } },
-            { embedding: { values: mockEmbedding } },
-          ],
+          embeddings: [{ values: mockEmbedding }, { values: mockEmbedding }],
         }),
       });
 
@@ -85,14 +82,29 @@ describe('GeminiEmbeddingProvider', () => {
       expect(result.dimensions).toBe(768);
     });
 
+    it('places outputDimensionality inside each request, not at the top level', async () => {
+      const mockEmbedding = Array(768).fill(0);
+      fetchSpy.mockResolvedValue({
+        ok: true,
+        json: () => ({ embeddings: [{ values: mockEmbedding }] }),
+      });
+
+      await provider.embed({ texts: ['test'] });
+
+      const body = JSON.parse(fetchSpy.mock.calls[0][1].body as string) as {
+        requests: { outputDimensionality?: number }[];
+        outputDimensionality?: number;
+      };
+      expect(body.outputDimensionality).toBeUndefined();
+      expect(body.requests[0].outputDimensionality).toBe(768);
+    });
+
     it('splits texts into batches of 100', async () => {
       const mockEmbedding = Array(768).fill(0);
       const makeBatchResponse = (count: number) => ({
         ok: true,
         json: () => ({
-          embeddings: Array(count).fill({
-            embedding: { values: mockEmbedding },
-          }),
+          embeddings: Array(count).fill({ values: mockEmbedding }),
         }),
       });
 
@@ -137,7 +149,7 @@ describe('GeminiEmbeddingProvider', () => {
         .mockResolvedValueOnce({
           ok: true,
           json: () => ({
-            embeddings: [{ embedding: { values: mockEmbedding } }],
+            embeddings: [{ values: mockEmbedding }],
           }),
         });
 

@@ -7,7 +7,7 @@ import {
 } from './generation.provider';
 import { withRetry } from './retry.util';
 
-const GROQ_DEFAULT_MODEL = 'llama3-8b-8192';
+const GROQ_DEFAULT_MODEL = 'llama-3.1-8b-instant';
 const GROQ_API_URL = 'https://api.groq.com/openai/v1/chat/completions';
 
 interface GroqMessage {

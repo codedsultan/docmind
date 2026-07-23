@@ -2,24 +2,36 @@
 
 import { useCallback, useRef, useState } from 'react';
 import type { Citation } from '@/types/api';
-import { API_BASE_URL } from '@/lib/api';
+import { API_BASE_URL, getAuthHeaders } from '@/lib/api';
+
+export interface ToolProposal {
+  type: 'proposal';
+  toolName: string;
+  preview: string;
+  confirmationToken: string;
+}
 
 type StreamEvent =
   | { type: 'citations'; data: Citation[] }
   | { type: 'token'; data: string }
   | { type: 'done'; data: string }
-  | { type: 'error'; data: string };
+  | { type: 'error'; data: string }
+  | { type: 'tool_call'; data: { toolName: string; params: unknown } }
+  | { type: 'tool_result'; data: { toolName: string; result?: unknown; error?: string } }
+  | { type: 'confirmation_required'; data: ToolProposal };
 
 interface ChatStreamState {
   content: string;
   citations: Citation[];
   loading: boolean;
   error: string | null;
+  pendingConfirmation: ToolProposal | null;
 }
 
 interface UseChatStreamReturn extends ChatStreamState {
   ask: (query: string, topK?: number) => void;
   abort: () => void;
+  clearConfirmation: () => void;
 }
 
 export function useChatStream(): UseChatStreamReturn {
@@ -28,6 +40,7 @@ export function useChatStream(): UseChatStreamReturn {
     citations: [],
     loading: false,
     error: null,
+    pendingConfirmation: null,
   });
 
   const abortRef = useRef<AbortController | null>(null);
@@ -38,19 +51,23 @@ export function useChatStream(): UseChatStreamReturn {
     setState((prev) => ({ ...prev, loading: false }));
   }, []);
 
+  const clearConfirmation = useCallback(() => {
+    setState((prev) => ({ ...prev, pendingConfirmation: null }));
+  }, []);
+
   const ask = useCallback((query: string, topK?: number) => {
     // Cancel any in-flight request
     abortRef.current?.abort();
     const controller = new AbortController();
     abortRef.current = controller;
 
-    setState({ content: '', citations: [], loading: true, error: null });
+    setState({ content: '', citations: [], loading: true, error: null, pendingConfirmation: null });
 
     void (async () => {
       try {
         const res = await fetch(`${API_BASE_URL}/v1/chat/stream`, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
           body: JSON.stringify({ query, topK }),
           signal: controller.signal,
         });
@@ -95,6 +112,12 @@ export function useChatStream(): UseChatStreamReturn {
                 error: event.data as string,
                 loading: false,
               }));
+            } else if (event.type === 'confirmation_required') {
+              setState((prev) => ({
+                ...prev,
+                loading: false,
+                pendingConfirmation: event.data as ToolProposal,
+              }));
             }
           }
         }
@@ -109,5 +132,5 @@ export function useChatStream(): UseChatStreamReturn {
     })();
   }, []);
 
-  return { ...state, ask, abort };
+  return { ...state, ask, abort, clearConfirmation };
 }

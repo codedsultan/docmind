@@ -21,6 +21,7 @@ import {
   RetrievalService,
   RetrievedChunk,
 } from '../retrieval/retrieval.service';
+import { parseCitations, Citation } from './citation.util';
 import {
   GENERATION_PROVIDER,
   GenerationProvider,
@@ -82,12 +83,7 @@ export class QueryResponseDto {
   @ApiProperty({ type: [CitationDto] }) citations!: CitationDto[];
 }
 
-export interface Citation {
-  marker: string;
-  chunkId: string;
-  documentTitle: string;
-  snippet: string;
-}
+export type { Citation };
 
 @ApiTags('chat')
 @UseGuards(AuthGuard)
@@ -123,14 +119,21 @@ export class QueryController {
     if (this.redis) {
       const cached = await this.redis.get(answerCacheKey);
       if (cached) {
-        this.logger.debug('[cache:hit] answer');
-        return JSON.parse(cached) as QueryResponseDto;
+        try {
+          this.logger.debug('[cache:hit] answer');
+          return JSON.parse(cached) as QueryResponseDto;
+        } catch {
+          this.logger.warn(
+            '[cache:corrupt] bad JSON in answer cache — re-generating',
+          );
+          await this.redis.del(answerCacheKey);
+        }
       }
       this.logger.debug('[cache:miss] answer');
     }
 
     const answer = await this.generateAnswer(dto.query, chunks);
-    const citations = this.parseCitations(answer, chunks);
+    const citations = parseCitations(answer, chunks);
 
     const response: QueryResponseDto = {
       answer,
@@ -183,31 +186,5 @@ export class QueryController {
         maxOutputTokens: 1024,
       })
       .then((r) => r.content);
-  }
-
-  /**
-   * Parses [N] markers from the generated answer and maps them back to the
-   * corresponding source chunks (1-indexed).
-   */
-  parseCitations(answer: string, chunks: RetrievedChunk[]): Citation[] {
-    const found = new Set<number>();
-    const markerRe = /\[(\d+)\]/g;
-    let match: RegExpExecArray | null;
-    while ((match = markerRe.exec(answer)) !== null) {
-      const n = parseInt(match[1], 10);
-      if (n >= 1 && n <= chunks.length) found.add(n);
-    }
-
-    return [...found]
-      .sort((a, b) => a - b)
-      .map((n) => {
-        const chunk = chunks[n - 1];
-        return {
-          marker: `[${n}]`,
-          chunkId: chunk.chunkId,
-          documentTitle: chunk.documentTitle,
-          snippet: chunk.content.slice(0, 150),
-        };
-      });
   }
 }

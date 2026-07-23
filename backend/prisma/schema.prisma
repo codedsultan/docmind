@@ -69,10 +69,70 @@ model Chunk {
   @@map("chunks")
 }
 
+enum RiskTier {
+  read
+  internal_write
+  external_write
+}
+
 model User {
   id        String   @id @default(uuid())
   email     String   @unique
   name      String?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+}
+
+model Note {
+  id            String   @id @default(uuid())
+  userId        String
+  content       String
+  sourceQueryId String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@map("notes")
+}
+
+model Task {
+  id            String    @id @default(uuid())
+  userId        String
+  title         String
+  description   String?
+  dueAt         DateTime?
+  done          Boolean   @default(false)
+  sourceQueryId String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  @@map("tasks")
+}
+
+model ToolCallAudit {
+  id        String   @id @default(uuid())
+  userId    String
+  toolName  String
+  riskTier  RiskTier
+  params    Json
+  result    Json?
+  confirmed Boolean  @default(false)
+  error     String?
+  createdAt DateTime @default(now())
+
+  @@map("tool_call_audits")
+}
+
+model QueryTrace {
+  id               String   @id @default(uuid())
+  userId           String
+  query            String
+  retrievedChunks  Json
+  provider         String
+  model            String
+  latencyBreakdown Json
+  cacheFlags       Json
+  toolCallAuditIds String[]
+  createdAt        DateTime @default(now())
+
+  @@map("query_traces")
 }
