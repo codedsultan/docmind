@@ -159,8 +159,10 @@ jobs:
           --health-retries 10
     env:
       DATABASE_URL: postgresql://postgres:test@localhost:5349/docmind_test
-      GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-      REDIS_URL: ""
+      REDIS_HOST: localhost
+      REDIS_PORT: "6379"
+      GEMINI_API_KEY: placeholder
+      INTERNAL_API_KEY: placeholder
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
