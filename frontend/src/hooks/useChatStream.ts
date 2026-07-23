@@ -65,7 +65,7 @@ export function useChatStream(): UseChatStreamReturn {
 
     void (async () => {
       try {
-        const res = await fetch(`${API_BASE_URL}/v1/chat/stream`, {
+        const res = await fetch(`${API_BASE_URL}/v1/agent/chat`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
           body: JSON.stringify({ query, topK }),

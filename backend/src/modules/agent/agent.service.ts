@@ -14,7 +14,9 @@ import type { AgentSseEvent } from './agent-sse.types';
 const SYSTEM_PROMPT = `You are DocMind, an AI assistant that can use tools to help users explore their documents.
 
 When you need to use a tool, respond with ONLY a valid JSON object (no markdown, no extra text):
-{"tool": "<tool_name>", "params": {<params>}}
+{"tool": "<tool_name>", "params": {<param_name>: <param_value>, ...}}
+
+IMPORTANT: Use the exact format above. Do NOT use {"tool_name": {...}} — always use the "tool" key with the tool name as the value.
 
 When you have enough information to answer, respond with your answer as plain text.
 
@@ -303,14 +305,29 @@ export class AgentService {
     const jsonMatch = trimmed.match(/^\{[\s\S]*\}$/);
     if (jsonMatch) {
       try {
-        const parsed = JSON.parse(trimmed) as {
-          tool?: string;
-          params?: unknown;
-        };
+        const parsed = JSON.parse(trimmed) as Record<string, unknown>;
+
+        // Primary format: {"tool": "<name>", "params": {...}}
         if (typeof parsed.tool === 'string') {
           return {
-            toolCall: { name: parsed.tool, params: parsed.params ?? {} },
+            toolCall: {
+              name: parsed.tool,
+              params: parsed.params ?? {},
+            },
           };
+        }
+
+        // Fallback: {"<tool_name>": {<params>}} — match if key is a registered tool
+        const knownTools = this.toolRegistry.listTools().map((t) => t.name);
+        for (const key of Object.keys(parsed)) {
+          if (knownTools.includes(key) && typeof parsed[key] === 'object') {
+            return {
+              toolCall: {
+                name: key,
+                params: parsed[key] ?? {},
+              },
+            };
+          }
         }
       } catch {
         // Malformed JSON — treat as final answer, never surface raw content

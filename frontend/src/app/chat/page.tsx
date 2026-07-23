@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { useChatStream } from '@/hooks/useChatStream';
+import { ConfirmationCard } from '@/components/ConfirmationCard';
 import type { Citation } from '@/types/api';
 
 function CitationBadge({ citation }: { citation: Citation }) {
@@ -60,7 +61,16 @@ function AnswerWithCitations({
 
 export default function ChatPage() {
   const [query, setQuery] = useState('');
-  const { content, citations, loading, error, ask, abort } = useChatStream();
+  const {
+    content,
+    citations,
+    loading,
+    error,
+    pendingConfirmation,
+    ask,
+    abort,
+    clearConfirmation,
+  } = useChatStream();
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -107,6 +117,18 @@ export default function ChatPage() {
         <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700">
           {error}
         </div>
+      )}
+
+      {pendingConfirmation && (
+        <ConfirmationCard
+          proposal={pendingConfirmation}
+          onConfirmed={() => {
+            // After confirmation, the tool executes server-side.
+            // The SSE stream has ended, so we just clean up.
+            clearConfirmation();
+          }}
+          onCancel={clearConfirmation}
+        />
       )}
 
       {hasAnswer && (
