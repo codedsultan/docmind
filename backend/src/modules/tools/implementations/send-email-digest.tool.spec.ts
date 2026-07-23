@@ -39,15 +39,14 @@ describe('SendEmailDigestTool', () => {
     expect(parsed.success).toBe(true);
   });
 
-  it('reads EMAIL_DIGEST_RECIPIENT from config and includes it in the result', async () => {
+  it('reads EMAIL_DIGEST_RECIPIENT from config for the preview but does not include it in the result', async () => {
     const { tool } = await buildTool('digest@example.com');
     const result = (await tool.execute({})) as {
       sent: boolean;
-      recipient: string;
       subject: string;
     };
     expect(result.sent).toBe(true);
-    expect(result.recipient).toBe('digest@example.com');
+    expect('recipient' in result).toBe(false);
   });
 
   it('delegates to EmailService.sendDigest with the preview string', async () => {

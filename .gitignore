@@ -43,6 +43,7 @@ TASKS.md
 
 
 scripts
+!backend/eval/scripts
 cmd.sh
 cmd
 

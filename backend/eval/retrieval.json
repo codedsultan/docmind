@@ -1,29 +1,99 @@
-[
-  {
-    "id": "case-01",
-    "query": "What documents are available about machine learning?",
-    "expectedDocIds": [],
-    "hitAtK": 3,
-    "hitAtKThreshold": 0.0,
-    "mrrThreshold": 0.0,
-    "note": "Threshold 0.0 — passes with empty DB. Raise to ≥0.5 once ML documents are seeded."
+{
+  "description": "Retrieval eval set built against eval/fixtures/postgres-overview.txt. Ingest that file first via the upload endpoint before running pnpm eval.",
+  "thresholds": {
+    "hitAtK": 0.75,
+    "mrr": 0.60
   },
-  {
-    "id": "case-02",
-    "query": "Summarize the key findings from the research papers",
-    "expectedDocIds": [],
-    "hitAtK": 3,
-    "hitAtKThreshold": 0.0,
-    "mrrThreshold": 0.0,
-    "note": "Threshold 0.0 — passes with empty DB. Raise to ≥0.5 once research documents are seeded."
-  },
-  {
-    "id": "case-03",
-    "query": "What are the project requirements and specifications?",
-    "expectedDocIds": [],
-    "hitAtK": 3,
-    "hitAtKThreshold": 0.0,
-    "mrrThreshold": 0.0,
-    "note": "Threshold 0.0 — passes with empty DB. Raise to ≥0.5 once spec documents are seeded."
-  }
-]
+  "cases": [
+    {
+      "question": "What does ACID stand for in PostgreSQL?",
+      "expectedSnippets": ["Atomicity", "Consistency", "Isolation", "Durability"],
+      "tags": ["acid", "transactions"]
+    },
+    {
+      "question": "Which PostgreSQL index type is best for full-text search?",
+      "expectedSnippets": ["GIN"],
+      "tags": ["indexes", "fts"]
+    },
+    {
+      "question": "What is a tsvector?",
+      "expectedSnippets": ["tsvector", "processed document text"],
+      "tags": ["fts"]
+    },
+    {
+      "question": "How does websearch_to_tsquery work?",
+      "expectedSnippets": ["websearch_to_tsquery", "tsquery"],
+      "tags": ["fts"]
+    },
+    {
+      "question": "What is ts_rank used for?",
+      "expectedSnippets": ["ts_rank", "tsvector", "tsquery"],
+      "tags": ["fts", "ranking"]
+    },
+    {
+      "question": "What is JSONB in PostgreSQL?",
+      "expectedSnippets": ["JSONB", "binary JSON"],
+      "tags": ["jsonb"]
+    },
+    {
+      "question": "How can you index JSONB columns?",
+      "expectedSnippets": ["GIN", "JSONB"],
+      "tags": ["jsonb", "indexes"]
+    },
+    {
+      "question": "What is streaming replication in PostgreSQL?",
+      "expectedSnippets": ["streaming replication", "WAL", "standby"],
+      "tags": ["replication"]
+    },
+    {
+      "question": "What tools are used for connection pooling?",
+      "expectedSnippets": ["PgBouncer", "Pgpool-II"],
+      "tags": ["pooling"]
+    },
+    {
+      "question": "What is the pgvector extension?",
+      "expectedSnippets": ["pgvector", "vector similarity"],
+      "tags": ["pgvector"]
+    },
+    {
+      "question": "What distance operators does pgvector support?",
+      "expectedSnippets": ["cosine", "L2", "inner product"],
+      "tags": ["pgvector"]
+    },
+    {
+      "question": "What does VACUUM do in PostgreSQL?",
+      "expectedSnippets": ["VACUUM", "dead tuples", "storage"],
+      "tags": ["maintenance"]
+    },
+    {
+      "question": "What is MVCC?",
+      "expectedSnippets": ["Multi-Version Concurrency Control", "readers", "writers"],
+      "tags": ["mvcc", "concurrency"]
+    },
+    {
+      "question": "How does WAL ensure data integrity?",
+      "expectedSnippets": ["WAL", "Write-Ahead Logging", "log"],
+      "tags": ["wal"]
+    },
+    {
+      "question": "What does the pg_stat_activity view show?",
+      "expectedSnippets": ["pg_stat_activity", "connections", "query"],
+      "tags": ["monitoring"]
+    },
+    {
+      "question": "What partitioning strategies does PostgreSQL support?",
+      "expectedSnippets": ["range", "list", "hash"],
+      "tags": ["partitioning"]
+    },
+    {
+      "question": "What is AUTOVACUUM?",
+      "expectedSnippets": ["AUTOVACUUM", "VACUUM", "ANALYZE"],
+      "tags": ["maintenance"]
+    },
+    {
+      "question": "What index types does pgvector support?",
+      "expectedSnippets": ["HNSW", "IVFFlat"],
+      "tags": ["pgvector", "indexes"]
+    }
+  ]
+}

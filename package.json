@@ -12,7 +12,7 @@
     "lint:backend": "pnpm --filter docmind-api lint",
     "lint:frontend": "pnpm --filter docmind-web lint",
     "test": "pnpm --filter docmind-api test && pnpm --filter docmind-web test",
-    "eval": "ts-node backend/scripts/eval-retrieval.ts"
+    "eval": "pnpm --filter docmind-api eval"
   },
   "pnpm": {
     "onlyBuiltDependencies": [

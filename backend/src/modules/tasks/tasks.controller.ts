@@ -42,6 +42,7 @@ export class CreateTaskDto {
   })
   @IsOptional()
   @IsString()
+  @MaxLength(200)
   dueAt?: string;
 
   @ApiProperty({ required: false })
@@ -67,6 +68,7 @@ export class UpdateTaskDto {
   @ApiProperty({ required: false })
   @IsOptional()
   @IsString()
+  @MaxLength(200)
   dueAt?: string;
 }
 

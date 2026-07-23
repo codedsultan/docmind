@@ -134,7 +134,7 @@ export class AgentService {
       // external_write: return proposal, stop the loop
       if (dispatchResult !== undefined && isToolProposal(dispatchResult)) {
         return {
-          proposal: dispatchResult as ToolProposal,
+          proposal: dispatchResult,
           toolResult: null,
           pendingToolCall: null,
         };
@@ -152,7 +152,7 @@ export class AgentService {
 
       return {
         messages: [
-          { role: 'assistant', content: state.lastModelOutput } as ChatMessage,
+          { role: 'assistant', content: state.lastModelOutput },
           toolResultMsg,
         ],
         toolResult: {

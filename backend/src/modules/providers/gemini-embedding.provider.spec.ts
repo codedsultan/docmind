@@ -91,7 +91,8 @@ describe('GeminiEmbeddingProvider', () => {
 
       await provider.embed({ texts: ['test'] });
 
-      const body = JSON.parse(fetchSpy.mock.calls[0][1].body as string) as {
+      const [, init] = fetchSpy.mock.calls[0] as [unknown, { body: string }];
+      const body = JSON.parse(init.body) as {
         requests: { outputDimensionality?: number }[];
         outputDimensionality?: number;
       };

@@ -1,9 +1,11 @@
 import {
   BadRequestException,
+  ForbiddenException,
   Injectable,
   Logger,
   NotFoundException,
   Optional,
+  ServiceUnavailableException,
 } from '@nestjs/common';
 import { randomUUID } from 'crypto';
 import type Redis from 'ioredis';
@@ -74,7 +76,7 @@ export class ToolRegistryService {
     }
 
     // external_write: propose, never execute
-    return this.dispatchExternalWrite(tool, validParams);
+    return this.dispatchExternalWrite(tool, validParams, ctx);
   }
 
   /** Execute an external_write proposal that was previously confirmed. */
@@ -106,29 +108,44 @@ export class ToolRegistryService {
     // Single-use: delete immediately
     await this.redis.del(key);
 
-    const { toolName, params } = JSON.parse(raw) as {
+    const parsed = JSON.parse(raw) as {
       toolName: string;
       params: unknown;
+      userId?: string;
     };
 
-    const tool = this.tools.get(toolName);
+    if (parsed.userId !== ctx.userId) {
+      await this.writeAudit({
+        userId: ctx.userId,
+        toolName: parsed.toolName,
+        riskTier: 'external_write',
+        params: parsed.params,
+        confirmed: false,
+        error: 'Token was issued for a different user',
+      });
+      throw new ForbiddenException('Token was issued for a different user');
+    }
+
+    const tool = this.tools.get(parsed.toolName);
     if (!tool) {
-      throw new NotFoundException(`Tool "${toolName}" no longer registered`);
+      throw new NotFoundException(
+        `Tool "${parsed.toolName}" no longer registered`,
+      );
     }
 
     let result: unknown;
     let error: string | undefined;
     try {
-      result = await tool.execute(params, ctx);
+      result = await tool.execute(parsed.params, ctx);
     } catch (err) {
       error = err instanceof Error ? err.message : String(err);
     }
 
     await this.writeAudit({
       userId: ctx.userId,
-      toolName,
+      toolName: parsed.toolName,
       riskTier: tool.riskTier,
-      params,
+      params: parsed.params,
       result,
       confirmed: true,
       error,
@@ -171,18 +188,23 @@ export class ToolRegistryService {
   private async dispatchExternalWrite(
     tool: Tool<unknown>,
     params: unknown,
+    ctx: ToolContext,
   ): Promise<ToolProposal> {
+    if (!this.redis) {
+      throw new ServiceUnavailableException(
+        'External-write tools require Redis',
+      );
+    }
+
     const confirmationToken = randomUUID();
     const preview = `[${tool.name}] ${JSON.stringify(params)}`;
 
-    if (this.redis) {
-      await this.redis.set(
-        `confirm:${confirmationToken}`,
-        JSON.stringify({ toolName: tool.name, params }),
-        'EX',
-        CONFIRM_TOKEN_TTL,
-      );
-    }
+    await this.redis.set(
+      `confirm:${confirmationToken}`,
+      JSON.stringify({ toolName: tool.name, params, userId: ctx.userId }),
+      'EX',
+      CONFIRM_TOKEN_TTL,
+    );
 
     return {
       type: 'proposal',

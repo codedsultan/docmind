@@ -1,0 +1,45 @@
+PostgreSQL Overview
+
+PostgreSQL is an advanced open-source relational database system that has been developed for more than 35 years. It supports both SQL (relational) and JSON (non-relational) querying.
+
+ACID Compliance
+PostgreSQL is fully ACID-compliant. ACID stands for Atomicity, Consistency, Isolation, and Durability. These properties ensure reliable processing of database transactions.
+
+Indexes
+PostgreSQL supports several index types: B-tree, Hash, GiST, SP-GiST, GIN, and BRIN. B-tree is the default index and works well for most queries. GIN indexes are ideal for full-text search and array columns.
+
+Full-Text Search
+PostgreSQL includes built-in full-text search. The tsvector type stores processed document text, and tsquery represents a search query. The function to_tsvector converts text to a tsvector, and websearch_to_tsquery converts a web-style search query string to a tsquery. ts_rank computes a score indicating how well a tsvector matches a tsquery.
+
+JSONB
+PostgreSQL supports JSONB, a binary JSON storage format that allows indexing and efficient querying of JSON documents. GIN indexes can be used on JSONB columns to speed up key/value lookups.
+
+Replication
+PostgreSQL supports several replication methods: streaming replication (physical), logical replication, and third-party tools. Streaming replication transmits WAL records from primary to standby servers in near real-time.
+
+Transactions
+Transactions in PostgreSQL begin with BEGIN and end with COMMIT or ROLLBACK. Savepoints allow partial rollbacks within a transaction using SAVEPOINT and ROLLBACK TO SAVEPOINT.
+
+Connection Pooling
+PostgreSQL connections are heavyweight processes. Tools like PgBouncer and Pgpool-II are commonly used to pool and reuse connections, reducing the overhead of creating a new process per connection.
+
+Extensions
+PostgreSQL supports extensions that add functionality to the database. Popular extensions include pgvector for vector similarity search, PostGIS for geographic data, pg_trgm for trigram-based text matching, and uuid-ossp for UUID generation.
+
+pgvector
+The pgvector extension adds vector data types and similarity search operators to PostgreSQL. It supports L2 distance, inner product, and cosine distance operators. The <=> operator computes cosine distance. HNSW (Hierarchical Navigable Small World) and IVFFlat are the two index types supported by pgvector.
+
+Vacuum
+VACUUM reclaims storage occupied by dead tuples. AUTOVACUUM is a background daemon that runs VACUUM and ANALYZE automatically. Dead tuples accumulate when rows are updated or deleted because PostgreSQL uses MVCC (Multi-Version Concurrency Control) to allow concurrent access without locking.
+
+MVCC
+Multi-Version Concurrency Control allows multiple versions of a row to coexist, so readers do not block writers and writers do not block readers. Each transaction sees a consistent snapshot of the database.
+
+Partitioning
+PostgreSQL supports declarative table partitioning by range, list, or hash. Partitioning improves query performance by allowing the planner to exclude irrelevant partitions and can improve bulk load and delete operations.
+
+WAL (Write-Ahead Logging)
+WAL ensures data integrity by writing changes to a log before applying them to the actual data files. WAL is also the basis for PostgreSQL replication.
+
+pg_stat_activity
+The pg_stat_activity view shows information about current database connections, including the query being executed, the state of the connection, and how long the connection has been open.

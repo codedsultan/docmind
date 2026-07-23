@@ -11,6 +11,7 @@ export interface CreateTraceDto {
   latencyBreakdown: Record<string, number>;
   cacheFlags: { embeddingHit: boolean; answerHit: boolean };
   toolCallAuditIds?: string[];
+  providerFallback?: boolean;
 }
 
 interface TurnCompletedEvent {
@@ -22,6 +23,7 @@ interface TurnCompletedEvent {
   latencyBreakdown: Record<string, number>;
   cacheFlags?: { embeddingHit?: boolean; answerHit?: boolean };
   toolCallAuditIds?: string[];
+  providerFallback?: boolean;
 }
 
 @Injectable()
@@ -41,6 +43,7 @@ export class TraceService {
         latencyBreakdown: data.latencyBreakdown,
         cacheFlags: data.cacheFlags,
         toolCallAuditIds: data.toolCallAuditIds ?? [],
+        providerFallback: data.providerFallback ?? false,
       },
     });
   }
@@ -77,6 +80,7 @@ export class TraceService {
           answerHit: event.cacheFlags?.answerHit ?? false,
         },
         toolCallAuditIds: event.toolCallAuditIds ?? [],
+        providerFallback: event.providerFallback ?? false,
       });
     } catch (err) {
       this.logger.error('Failed to write QueryTrace', err);
