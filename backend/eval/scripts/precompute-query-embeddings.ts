@@ -87,24 +87,32 @@ async function main(): Promise<void> {
 
   for (let i = 0; i < queries.length; i++) {
     const q = queries[i];
-    process.stdout.write(`  [${i + 1}/${queries.length}] "${q.slice(0, 50)}…" `);
+    process.stdout.write(
+      `  [${i + 1}/${queries.length}] "${q.slice(0, 50)}…" `,
+    );
     try {
       const embedding = await embedQuery(spec.cases[i].question, apiKey);
       result[q] = embedding;
       console.log(`✓ (${embedding.length} dims)`);
     } catch (err) {
-      console.error(`✗ FAILED: ${err instanceof Error ? err.message : String(err)}`);
+      console.error(
+        `✗ FAILED: ${err instanceof Error ? err.message : String(err)}`,
+      );
       process.exit(1);
     }
   }
 
   fs.writeFileSync(OUTPUT_PATH, JSON.stringify(result, null, 2));
-  console.log(`\nWrote ${Object.keys(result).length} query embeddings to ${OUTPUT_PATH}`);
+  console.log(
+    `\nWrote ${Object.keys(result).length} query embeddings to ${OUTPUT_PATH}`,
+  );
 
   // Verify all dimensions
   const dims = new Set(Object.values(result).map((e) => e.length));
   if (dims.size !== 1 || [...dims][0] !== EMBEDDING_DIMENSIONS) {
-    console.error(`ERROR: expected all ${EMBEDDING_DIMENSIONS} dims, got dimensions: ${[...dims]}`);
+    console.error(
+      `ERROR: expected all ${EMBEDDING_DIMENSIONS} dims, got dimensions: ${[...dims]}`,
+    );
     process.exit(1);
   }
 }

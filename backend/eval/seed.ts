@@ -109,7 +109,9 @@ export async function seedEvalFixtures(
   await seedQueryEmbeddings(app);
 }
 
-async function seedQueryEmbeddings(app: INestApplicationContext): Promise<void> {
+async function seedQueryEmbeddings(
+  app: INestApplicationContext,
+): Promise<void> {
   if (!fs.existsSync(QUERY_EMBEDDINGS_PATH)) {
     console.warn(
       '[seed] Pre-computed query embeddings not found, skipping Redis seed.\n' +
@@ -134,7 +136,9 @@ async function seedQueryEmbeddings(app: INestApplicationContext): Promise<void> 
     ) as Record<string, number[]>;
 
     let count = 0;
-    for (const [normalizedQuery, embedding] of Object.entries(queryEmbeddings)) {
+    for (const [normalizedQuery, embedding] of Object.entries(
+      queryEmbeddings,
+    )) {
       const cacheKey = `embed:${createHash('sha256').update(normalizedQuery).digest('hex')}`;
       await redis.setex(cacheKey, EMBED_CACHE_TTL, JSON.stringify(embedding));
       count++;
