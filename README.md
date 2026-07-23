@@ -164,9 +164,9 @@ The current build is deliberately minimal to prove the patterns work end-to-end.
 
 **Distributed tracing** — `QueryTrace` and `ToolCallAudit` rows give per-query observability. The natural upgrade is OpenTelemetry: attach a trace ID at the request boundary and propagate it through BullMQ jobs, provider calls, and tool invocations without changing application logic.
 
-**Multi-tenant auth** — every model row carries a real `userId` and the retrieval SQL already scopes by it. Phase 5 swaps the hardcoded `DEV_USER_ID` constant for a JWT guard — one change point, nothing else moves.
+**Auth** — TODO
 
-**Embedding fallback** — generation fallback between Gemini and Groq is straightforward because both models produce text to the same interface. Embedding fallback is intentionally omitted: Gemini and Groq use different embedding spaces, so a chunk indexed with Gemini embeddings cannot be queried with Groq embeddings without re-embedding the entire corpus. Cross-model embedding strategies (dual-index, re-indexing jobs) are described in the architecture docs but not built for V1.
+**Embedding fallback** — generation fallback between Gemini and Groq is straightforward because both models produce text to the same interface. Embedding fallback is intentionally omitted: Gemini and Groq use different embedding spaces, so a chunk indexed with Gemini embeddings cannot be queried with Groq embeddings without re-embedding the entire corpus. 
 
 ## CI/CD
 
