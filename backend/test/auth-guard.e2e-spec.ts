@@ -31,7 +31,9 @@ describe('AuthGuard (e2e)', () => {
 
   it('rejects all registered API routes with 401 when no auth header is present', async () => {
     const httpAdapter = app.getHttpAdapter();
-    const router: { stack: unknown[] } = httpAdapter.getInstance()._router;
+    const router: { stack: unknown[] } = (
+      httpAdapter.getInstance() as unknown as { _router: { stack: unknown[] } }
+    )._router;
     const routes: { method: string; path: string }[] = [];
 
     router.stack.forEach((layer: unknown) => {

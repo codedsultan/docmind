@@ -1,64 +1,114 @@
 /**
  * Real-database integration test for the ingestion → retrieval round-trip.
  *
- * Prerequisites (run manually or in CI with a real DB):
- *   - `testcontainers` package: `pnpm add -D testcontainers`
- *   - Docker daemon running with `pgvector/pgvector:pg16` image pulled
+ * Prerequisites:
+ *   - Docker daemon running with `pgvector/pgvector:pg16` image available
+ *   - `testcontainers` devDependency installed
  *
- * Why skipped by default:
- *   Unit tests cover behaviour; this proves the SQL + vector round-trip works
- *   against an actual Postgres + pgvector instance. It is expensive (~10s startup)
- *   and requires Docker, so it runs in a separate CI job rather than `pnpm test`.
- *
- * To run: DATABASE_URL=<pg-url> pnpm test:e2e --testPathPattern=integration
- *
- * When testcontainers is installed, remove the `describe.skip` and fill in
- * the container setup below.
+ * Run: pnpm test:integration   (separate from unit test suite)
  */
 
-describe.skip('Ingestion → Retrieval integration (requires Docker)', () => {
-  /**
-   * Setup outline (uncomment when testcontainers is installed):
-   *
-   * import { GenericContainer, Wait } from 'testcontainers';
-   * import { PrismaClient } from '../../../../generated/prisma/client';
-   * import { execSync } from 'child_process';
-   *
-   * let container: StartedTestContainer;
-   * let prisma: PrismaClient;
-   *
-   * beforeAll(async () => {
-   *   container = await new GenericContainer('pgvector/pgvector:pg16')
-   *     .withEnvironment({ POSTGRES_PASSWORD: 'test', POSTGRES_DB: 'docmind_test' })
-   *     .withWaitStrategy(Wait.forLogMessage('database system is ready to accept connections'))
-   *     .withExposedPorts(5432)
-   *     .start();
-   *
-   *   const port = container.getMappedPort(5432);
-   *   process.env['DATABASE_URL'] = `postgresql://postgres:test@localhost:${port}/docmind_test`;
-   *
-   *   execSync('pnpm prisma migrate deploy', { stdio: 'inherit' });
-   *
-   *   prisma = new PrismaClient();
-   *   await prisma.$connect();
-   * }, 60_000);
-   *
-   * afterAll(async () => {
-   *   await prisma.$disconnect();
-   *   await container.stop();
-   * });
-   */
+import { execSync } from 'child_process';
+import { GenericContainer, Wait } from 'testcontainers';
+import type { StartedTestContainer } from 'testcontainers';
+import { NestFactory } from '@nestjs/core';
+import type { INestApplicationContext } from '@nestjs/common';
+import { AppModule } from '../../../app.module';
+import { PrismaService } from '../../../prisma/prisma.service';
+import { RetrievalService } from '../../retrieval/retrieval.service';
+import { DEV_USER_ID } from '../../../common/constants';
+
+const VECTOR_DIM = 768;
+
+function makeVector(hotDim: number): number[] {
+  const v = new Array(VECTOR_DIM).fill(0) as number[];
+  v[hotDim] = 1.0;
+  return v;
+}
+
+describe('Ingestion → Retrieval integration (requires Docker)', () => {
+  let container: StartedTestContainer;
+  let prisma: PrismaService;
+  let app: INestApplicationContext;
+
+  beforeAll(async () => {
+    container = await new GenericContainer('pgvector/pgvector:pg16')
+      .withEnvironment({
+        POSTGRES_PASSWORD: 'test',
+        POSTGRES_DB: 'docmind_test',
+      })
+      .withWaitStrategy(
+        Wait.forLogMessage('database system is ready to accept connections', 2),
+      )
+      .withExposedPorts(5432)
+      .start();
+
+    const port = container.getMappedPort(5432);
+    const dbUrl = `postgresql://postgres:test@localhost:${port}/docmind_test`;
+    process.env['DATABASE_URL'] = dbUrl;
+
+    const backendDir = __dirname.includes('/backend/')
+      ? __dirname.split('/backend/')[0] + '/backend'
+      : process.cwd();
+
+    execSync('npx prisma migrate deploy', {
+      stdio: 'inherit',
+      cwd: backendDir,
+      env: { ...process.env, DATABASE_URL: dbUrl },
+    });
+
+    app = await NestFactory.createApplicationContext(AppModule, {
+      logger: ['error'],
+    });
+
+    prisma = app.get(PrismaService);
+  }, 120_000);
+
+  afterAll(async () => {
+    await app?.close();
+    await container?.stop();
+  }, 30_000);
 
   it('inserts a chunk with a vector embedding and retrieves it by similarity', async () => {
-    /**
-     * Round-trip assertion outline:
-     *
-     * 1. Create a Document row (userId=DEV_USER_ID, title='test-doc', visibility='private', status='ready').
-     * 2. Insert a DocumentChunk with a known 768-dim vector close to the query embedding.
-     * 3. Call RetrievalService.retrieve('test query', { userId: DEV_USER_ID, topK: 1 }).
-     * 4. Assert the returned chunk's documentId matches the document created in step 1.
-     * 5. Assert fusedScore > 0.
-     */
-    expect(true).toBe(true); // placeholder — remove when implementing
+    const contentHash = `integration-test-${Date.now()}`;
+
+    const doc = await prisma.document.create({
+      data: {
+        userId: DEV_USER_ID,
+        title: 'Integration Test Document',
+        contentHash,
+        sourceType: 'txt',
+        visibility: 'private',
+        status: 'ready',
+      },
+    });
+
+    const content = 'PostgreSQL supports ACID transactions and MVCC.';
+    const chunkHash = `chunk-${contentHash}`;
+    const embedding = makeVector(42);
+    const vectorLiteral = `[${embedding.join(',')}]`;
+
+    await prisma.$executeRaw`
+      INSERT INTO chunks (id, "documentId", content, "contentHash", "chunkIndex", embedding, "createdAt")
+      VALUES (
+        gen_random_uuid(),
+        ${doc.id},
+        ${content},
+        ${chunkHash},
+        0,
+        ${vectorLiteral}::vector,
+        NOW()
+      )
+    `;
+
+    const retrieval = app.get(RetrievalService);
+    const results = await retrieval.retrieve('ACID transactions PostgreSQL', {
+      userId: DEV_USER_ID,
+      topK: 1,
+    });
+
+    expect(results.length).toBeGreaterThan(0);
+    expect(results[0].documentId).toBe(doc.id);
+    expect(results[0].fusedScore).toBeGreaterThan(0);
   });
 });

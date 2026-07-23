@@ -298,3 +298,56 @@ at Phase 2 before the eval baseline is established.
 **Status:** ✅ Completed
 **Tasks:** 0 done, 40 pending
 **Handover:** .ai/handover-20260722-142646-003.md
+
+---
+## Session 20260722-165128-004 — 2026-07-22 16:55
+**Branch:** ai/session-20260722-165128-004
+**Duration:** 4m 2s
+**Status:** ❌ Incomplete
+**Tasks:** 0
+0 done, 35 pending
+**Handover:** .ai/handover-20260722-165128-004.md (basic — Claude session unavailable)
+
+---
+## Session 20260722-220556-010 — 2026-07-22 22:41
+**Branch:** ai/session-20260722-220556-010
+**Duration:** 19m 56s
+**Status:** ✅ Completed
+**Tasks:** 25 done, 23 pending
+**Handover:** .ai/handover-20260722-220556-010.md
+
+---
+## Session 20260722-224934-011 — 2026-07-22 22:55
+**Branch:** ai/session-20260722-224934-011
+**Commit:** `7ddba8c`
+**Duration:** ~16m
+**Status:** ✅ Completed
+
+### What changed — Security fixes (SEC-010-1 through SEC-010-7)
+
+All 7 security findings from the previous review session were fixed:
+
+- **SEC-010-1** (HIGH): Bound userId to Redis confirmation token in `tool-registry.service.ts`. `dispatchExternalWrite` now stores `{ toolName, params, userId }`; `executeConfirmed` asserts `parsed.userId === ctx.userId`, throws 403 if mismatch. Audit row written in both cases.
+- **SEC-010-2**: Removed `|| true` from CI `pnpm audit` step so dependency vulns now block. Snyk `continue-on-error: true` deferred until `SNYK_TOKEN` is configured in repo secrets.
+- **SEC-010-3**: Redacted `recipient` from `SendEmailDigestTool` return value — no longer surfaces in SSE `tool_result` events.
+- **SEC-010-4**: Added `ServiceUnavailableException` guard in `dispatchExternalWrite` when Redis is null — prevents issuing unconfirmable proposals.
+- **SEC-010-5**: Added `SmtpEmailService` (nodemailer-based) + `EMAIL_MODE` factory in `EmailModule`. Defaults to `EmailLogService` (`EMAIL_MODE=log`); throws at startup if `EMAIL_MODE=send` without SMTP credentials.
+- **SEC-010-6**: Reduced provider API error log verbosity — both `groq-generation.provider.ts` and `gemini-embedding.provider.ts` now log status-code only at ERROR level (body drained silently).
+- **SEC-010-7**: Added `@MaxLength(200)` to `dueAt` in both `CreateTaskDto` and `UpdateTaskDto`; added `@IsUUID()` to `queryId` in `ConfirmDto`.
+
+### Test results
+141 tests passed, 17 suites, 0 failed. TypeScript compiles cleanly.
+
+### Remaining Phase 4 items
+- End-to-end eval verification (requires Docker stack locally)
+- Branch protection gating for `eval-retrieval` (GitHub UI)
+- Regression detection push test (CI push)
+- Demo GIF/video (screen recording + running app)
+
+---
+## Session 20260722-224934-011 — 2026-07-22 22:55
+**Branch:** ai/session-20260722-224934-011
+**Duration:** 5m 30s
+**Status:** ✅ Completed
+**Tasks:** 37 done, 11 pending
+**Handover:** .ai/handover-20260722-224934-011.md

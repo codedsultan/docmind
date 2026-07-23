@@ -77,10 +77,8 @@ export class GeminiEmbeddingProvider implements EmbeddingProvider {
     );
 
     if (!response.ok) {
-      const errorText = await response.text();
-      this.logger.error(
-        `Gemini embed API error (${response.status}): ${errorText}`,
-      );
+      await response.text(); // drain body
+      this.logger.error(`Gemini embed API error (${response.status})`);
       throw new Error(`Embedding API error: ${response.status}`);
     }
 

@@ -12,7 +12,7 @@
     "lint:backend": "pnpm --filter docmind-api lint",
     "lint:frontend": "pnpm --filter docmind-web lint",
     "test": "pnpm --filter docmind-api test && pnpm --filter docmind-web test",
-    "eval": "ts-node backend/scripts/eval-retrieval.ts"
+    "eval": "pnpm --filter docmind-api eval"
   },
   "pnpm": {
     "onlyBuiltDependencies": [
@@ -22,7 +22,14 @@
       "prisma",
       "sharp",
       "unrs-resolver"
-    ]
+    ],
+    "overrides": {
+      "multer": "2.2.0",
+      "sharp": "0.35.0",
+      "brace-expansion@2": "2.1.2",
+      "brace-expansion@1": "1.1.16",
+      "fast-uri": "3.1.4"
+    }
   },
   "packageManager": "pnpm@10.32.1",
   "engines": {

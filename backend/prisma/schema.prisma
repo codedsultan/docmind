@@ -132,6 +132,7 @@ model QueryTrace {
   latencyBreakdown Json
   cacheFlags       Json
   toolCallAuditIds String[]
+  providerFallback Boolean  @default(false)
   createdAt        DateTime @default(now())
 
   @@map("query_traces")

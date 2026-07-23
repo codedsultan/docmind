@@ -31,6 +31,6 @@ export class SendEmailDigestTool implements Tool<Params> {
 
     await this.emailService.sendDigest(preview);
 
-    return { sent: true, recipient, subject };
+    return { sent: true, subject };
   }
 }

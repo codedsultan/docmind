@@ -39,7 +39,7 @@ export default function AdminTracesPage() {
   }, []);
 
   return (
-    <div className="mx-auto max-w-5xl px-4 py-8">
+    <div className="mx-auto max-w-3xl px-4 py-8">
       <h1 className="mb-6 text-2xl font-bold text-gray-900">Query Traces</h1>
       {error && <p className="mb-4 text-sm text-red-600">{error}</p>}
       {loading ? (

@@ -77,10 +77,8 @@ export class GroqGenerationProvider implements GenerationProvider {
     );
 
     if (!response.ok) {
-      const errorText = await response.text();
-      this.logger.error(
-        `Groq generate API error (${response.status}): ${errorText}`,
-      );
+      await response.text(); // drain body
+      this.logger.error(`Groq generate API error (${response.status})`);
       throw new Error(`Groq generation API error: ${response.status}`);
     }
 
@@ -116,10 +114,8 @@ export class GroqGenerationProvider implements GenerationProvider {
     );
 
     if (!response.ok) {
-      const errorText = await response.text();
-      this.logger.error(
-        `Groq stream API error (${response.status}): ${errorText}`,
-      );
+      await response.text(); // drain body
+      this.logger.error(`Groq stream API error (${response.status})`);
       throw new Error(`Groq generation stream API error: ${response.status}`);
     }
 

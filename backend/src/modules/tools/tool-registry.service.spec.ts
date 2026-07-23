@@ -1,5 +1,5 @@
 import { Test } from '@nestjs/testing';
-import { NotFoundException } from '@nestjs/common';
+import { ForbiddenException, NotFoundException } from '@nestjs/common';
 import { z } from 'zod';
 import { ToolRegistryService } from './tool-registry.service';
 import { RiskTier } from '../../common/constants';
@@ -201,6 +201,41 @@ describe('ToolRegistryService', () => {
       await expect(
         service.executeConfirmed(proposal.confirmationToken, ctx),
       ).rejects.toThrow();
+    });
+
+    it('rejects confirmation from a different user (SEC-010-1)', async () => {
+      const prisma = makePrisma();
+      const redis = makeRedis();
+      const service = await buildService(prisma, redis);
+      const tool = makeTool({ riskTier: RiskTier.externalWrite });
+      service.register(tool);
+
+      const userA: ToolContext = { userId: 'user-a', queryId: 'q-1' };
+      const userB: ToolContext = { userId: 'user-b', queryId: 'q-2' };
+
+      const proposal = await service.dispatch(
+        'test_tool',
+        { value: 'x' },
+        userA,
+      );
+      if (!isToolProposal(proposal)) throw new Error();
+
+      await expect(
+        service.executeConfirmed(proposal.confirmationToken, userB),
+      ).rejects.toThrow(ForbiddenException);
+
+      // eslint-disable-next-line @typescript-eslint/unbound-method
+      expect(tool.execute).not.toHaveBeenCalled();
+      expect(prisma.toolCallAudit.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            userId: 'user-b',
+            toolName: 'test_tool',
+            confirmed: false,
+            error: 'Token was issued for a different user',
+          }) as unknown,
+        }),
+      );
     });
   });
 });

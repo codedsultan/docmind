@@ -17,7 +17,13 @@ import {
   ApiResponse,
   ApiTags,
 } from '@nestjs/swagger';
-import { IsOptional, IsString, MaxLength, MinLength } from 'class-validator';
+import {
+  IsOptional,
+  IsString,
+  IsUUID,
+  MaxLength,
+  MinLength,
+} from 'class-validator';
 import { Observable, Subject } from 'rxjs';
 import type { Request } from 'express';
 import type Redis from 'ioredis';
@@ -47,7 +53,7 @@ export class ConfirmDto {
 
   @ApiProperty({ required: false })
   @IsOptional()
-  @IsString()
+  @IsUUID()
   queryId?: string;
 }
 

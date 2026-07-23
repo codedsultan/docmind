@@ -4,7 +4,60 @@ All notable changes to DocMind are logged here, phase by phase. This is the publ
 
 Format loosely follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
-## [Unreleased]
+## Polish + CI — 2026-07-23
+
+### Added
+
+#### Eval Harness (F4.0-A, F4.0-B, F4.1-A)
+- `backend/eval/retrieval.json` — replaced 3-case threshold-0.0 placeholder with the full 18-case eval set (migrated from `eval/retrieval.json`) targeting `postgres-overview.txt`. Thresholds: hit@5 ≥ 0.75, MRR ≥ 0.60.
+- `backend/eval/run-eval.ts` — rewritten to use the `question`/`expectedSnippets`/`thresholds` schema: bootstraps the NestJS app context, runs `RetrievalService.retrieve()` per case, checks each returned chunk's `content` against `expectedSnippets` for hit@k, computes MRR, logs a per-case table, and exits non-zero when either metric falls below the file's thresholds.
+- `backend/eval/seed.ts` — idempotent seeder: reads pre-computed embeddings from `backend/eval/fixtures/postgres-overview-embedded.json`, creates a `Document` row and inserts chunks via `$executeRaw` (no live embedding API call). Runs before eval cases in CI and locally.
+- `backend/eval/scripts/precompute-embeddings.ts` — one-off script that chunks `postgres-overview.txt` using `ChunkerService` parameters and embeds each chunk via Gemini `gemini-embedding-001` (768d); output committed as `backend/eval/fixtures/postgres-overview-embedded.json` (6 chunks, 768-element arrays).
+- `backend/eval/fixtures/postgres-overview.txt` — eval fixture document (public domain PostgreSQL overview, no personal content).
+- Root `package.json` `pnpm eval` script updated from the HTTP-based runner to `pnpm --filter docmind-api eval`, delegating to the NestJS-bootstrap runner. Old `backend/scripts/eval-retrieval.ts` (HTTP-based, required a running server) deleted.
+- `eval-retrieval` CI job in `.github/workflows/ci.yml` — runs after `test-backend`; spins up `pgvector/pgvector:pg16` as a service container (port 5349), deploys migrations, seeds pre-computed fixtures (no live embedding call), runs `pnpm --filter docmind-api eval`, exits non-zero on threshold miss, blocks merge to `main`/`develop`.
+
+#### Real Postgres Integration Test (F4.0-C)
+- `testcontainers` installed as a devDependency.
+- `backend/src/modules/ingestion/processors/ingestion.integration.spec.ts` — implemented (removed `describe.skip`): spins up `pgvector/pgvector:pg16` via `GenericContainer`, runs `prisma migrate deploy`, creates a `Document` row, inserts a `Chunk` with a known 768-dim vector via `$executeRaw`, calls `RetrievalService.retrieve()`, and asserts the returned chunk's `documentId` matches and `fusedScore > 0`. Teardown stops the container.
+- `test:integration` script added to `backend/package.json` — runs the integration spec in isolation (`--testPathPattern=integration --runInBand`). Excluded from the unit test regex so `pnpm test` remains fast (140 unit tests across 17 suites, 1 integration test separately).
+
+#### FallbackGenerationProvider (F4.3)
+- `FallbackGenerationProvider` — wraps a primary and a secondary `GenerationProvider`; on 429, 5xx, or request timeout from the primary, logs the failure (warn-level, provider name + error code), emits a `ProviderFallback` event, and delegates to the secondary. Implements both `generate()` and `generateStream()` paths.
+- `ProvidersModule` now builds the fallback wrapper when both `GEMINI_API_KEY` and `GROQ_API_KEY` are available; falls back to primary-only binding otherwise.
+- `providerFallback: Boolean` field added to `QueryTrace` (migration `0009_provider_fallback`). `CreateTraceDto` and `TurnCompletedEvent` carry the flag; `TraceService` writes it on every turn.
+- **Limitation (documented in README):** fallback applies to generation only. Embedding fallback is omitted in V1 — Gemini and Groq produce different embedding spaces, so using one provider's embeddings against the other's HNSW index produces meaningless similarity scores. A cross-model re-embedding step would be required to extend fallback to embeddings.
+
+#### README Rewrite (F4.2-A)
+- `README.md` fully rewritten for a public portfolio audience:
+  - Product description with the technically interesting choices called out explicitly.
+  - Mermaid architecture diagram showing the full request path: Next.js 16 → NestJS API → BullMQ → Postgres/pgvector + Redis, plus the agent layer (LangGraph.js `StateGraph` → `ToolRegistry` → tier-dispatched tools).
+  - Feature walkthrough matching the PRD Section 9 demo script (upload, retrieve with citations, save-note via agent, send-email-digest with confirmation card, trace viewer).
+  - Stack table with a "why" column for each technology.
+  - Local development setup with correct non-standard ports (frontend 3400, backend 4500, Postgres 5349, Redis 6399) and a note explaining why they differ from defaults.
+  - "How this scales" section describing (without building) tool-registry generation from OpenAPI spec, OTel distributed tracing, and the multi-tenant auth swap path (DEV_USER_ID → Phase 5 JWT).
+  - No personal data in any example, command, or diagram.
+
+### Fixed
+
+#### Security hardening (SEC-010-1 through SEC-010-7)
+- **SEC-010-1** — Confirmation tokens now bind to `userId` in Redis. `ToolRegistryService.dispatchExternalWrite` stores `{ toolName, params, userId }`. `executeConfirmed` asserts `parsed.userId === ctx.userId` and throws `ForbiddenException` on mismatch — prevents cross-user token replay.
+- **SEC-010-2** — Removed `|| true` from the `pnpm audit` step in CI; dependency vulnerabilities at `--audit-level=high` now fail the build.
+- **SEC-010-3** — `send_email_digest` tool response no longer echoes the recipient address back through the agent context.
+- **SEC-010-4** — External-write proposal dispatch now guards against Redis unavailability: throws `ServiceUnavailableException` instead of silently losing the proposal.
+- **SEC-010-5** — `SmtpEmailService` added as a concrete `EmailService` implementation; `EMAIL_MODE` env var (`log` | `smtp`) selects between `EmailLogService` (console, default) and `SmtpEmailService` (live send via configured SMTP credentials).
+- **SEC-010-6** — Provider API error logs no longer include the raw response body; error code and HTTP status only, preventing accidental leakage of API error payloads.
+- **SEC-010-7** — Added `@MaxLength(200)` to `dueAt` DTO fields and `@IsUUID()` to `ConfirmAgentActionDto.queryId`.
+
+### Tests
+- Cross-user confirmation rejection: generate a proposal for `userA`, attempt `executeConfirmed` with `userB`'s context, assert `ForbiddenException`.
+- Integration test: chunk insert + vector retrieval round-trip against real `pgvector/pgvector:pg16` container (testcontainers).
+- `send-email-digest.tool.spec.ts` updated for SEC-010-3 (recipient not in response) and SEC-010-4 (Redis unavailable path).
+- Total: 140 unit tests (17 suites) + 1 integration test.
+
+---
+
+## Phase 3 Stabilisation (SP8–SP13) — 2026-07-22
 
 ### Auth guard hardening (SP8)
 - `AuthGuard` applied at the class level in `AgentController`, `NotesController`, `TasksController`, and `TraceController` — every route under these controllers now requires a valid `Authorization: Bearer <key>` header.
@@ -28,10 +81,9 @@ Format loosely follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Citation utility (SP13)
 - `backend/src/modules/query/citation.util.ts` — shared `buildAllCitations()` and `parseCitations()` helpers extracted from `query.controller.ts` (which had an inline `parseCitations` method) and `query-documents.tool.ts` (which had duplicate inline citation mapping). Both callers now import from the shared module.
 
-### Eval runner (SP11)
-- `backend/eval/retrieval.json` — three-case eval fixture (thresholds set to 0.0 so it passes against an empty DB; raise once real documents are seeded).
-- `backend/eval/run-eval.ts` — standalone eval runner bootstrapping the NestJS application context, computing hit@k and MRR per case, logging a results table, and exiting non-zero on threshold failures.
-- `pnpm eval` script wired in `backend/package.json`.
+### Eval runner skeleton + integration test stub (SP11)
+- `backend/eval/run-eval.ts` — NestJS-bootstrap eval runner scaffolded; `pnpm eval` wired in `backend/package.json`. Initial eval fixture had 3 placeholder cases with threshold 0.0 (DB-agnostic baseline). Superseded and replaced in Phase 4 (F4.0-A/B) with the real 18-case set and committed embeddings.
+- `backend/src/modules/ingestion/processors/ingestion.integration.spec.ts` — integration test skeleton added as `describe.skip`; full implementation deferred to Phase 4 (F4.0-C) when `testcontainers` could be wired properly.
 
 ## Agentic Layer — 2026-07-22
 
