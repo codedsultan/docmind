@@ -8,16 +8,31 @@
  * Run: pnpm test:integration   (separate from unit test suite)
  */
 
+// ── Module-level env vars ──────────────────────────────────────────
+// @nestjs/config v4 forRoot() runs at module load time (when AppModule
+// is imported below), so these must be set BEFORE the import to pass
+// ConfigModule validation. Actual values (testcontainer port, etc.) are
+// overwritten in beforeAll.
+process.env['DATABASE_URL'] =
+  'postgresql://placeholder:placeholder@localhost:9999/placeholder';
+process.env['REDIS_HOST'] = 'localhost';
+process.env['REDIS_PORT'] = '6399';
+process.env['REDIS_URL'] = 'redis://localhost:6399';
+process.env['GEMINI_API_KEY'] = 'placeholder';
+process.env['JWT_SECRET'] = 'test-integration-jwt-secret-min32chars!!';
+
 import { execSync } from 'child_process';
 import { GenericContainer, Wait } from 'testcontainers';
 import type { StartedTestContainer } from 'testcontainers';
-import { NestFactory } from '@nestjs/core';
-import type { INestApplicationContext } from '@nestjs/common';
-import { AppModule } from '../../../app.module';
+import { Test } from '@nestjs/testing';
+import { Module, type INestApplicationContext } from '@nestjs/common';
+import { PrismaModule } from '../../../prisma/prisma.module';
 import { PrismaService } from '../../../prisma/prisma.service';
 import { RetrievalService } from '../../retrieval/retrieval.service';
-import { DEV_USER_ID } from '../../../common/constants';
+import { EMBEDDING_PROVIDER } from '../../providers/embedding.provider';
+import type { EmbeddingProvider } from '../../providers/embedding.provider';
 
+const TEST_USER_ID = 'test-user-00000000-0000-0000-0000-000000000000';
 const VECTOR_DIM = 768;
 
 function makeVector(hotDim: number): number[] {
@@ -25,6 +40,29 @@ function makeVector(hotDim: number): number[] {
   v[hotDim] = 1.0;
   return v;
 }
+
+/** Stub embedding provider so tests don't call the real Gemini API. */
+const stubEmbeddingProvider: EmbeddingProvider = {
+  model: 'test-stub',
+  dimensions: VECTOR_DIM,
+  embed(opts) {
+    return Promise.resolve({
+      embeddings: opts.texts.map(() => makeVector(42)),
+      model: 'test-stub',
+      dimensions: VECTOR_DIM,
+    });
+  },
+};
+
+// Minimal test module — avoids booting Queues, Auth, BullMQ, etc.
+@Module({
+  imports: [PrismaModule],
+  providers: [
+    RetrievalService,
+    { provide: EMBEDDING_PROVIDER, useValue: stubEmbeddingProvider },
+  ],
+})
+class TestIntegrationModule {}
 
 describe('Ingestion → Retrieval integration (requires Docker)', () => {
   let container: StartedTestContainer;
@@ -57,10 +95,12 @@ describe('Ingestion → Retrieval integration (requires Docker)', () => {
       env: { ...process.env, DATABASE_URL: dbUrl },
     });
 
-    app = await NestFactory.createApplicationContext(AppModule, {
-      logger: ['error'],
-    });
+    const moduleFixture = await Test.createTestingModule({
+      imports: [TestIntegrationModule],
+    }).compile();
 
+    app = moduleFixture.createNestApplication();
+    await app.init();
     prisma = app.get(PrismaService);
   }, 120_000);
 
@@ -74,7 +114,7 @@ describe('Ingestion → Retrieval integration (requires Docker)', () => {
 
     const doc = await prisma.document.create({
       data: {
-        userId: DEV_USER_ID,
+        userId: TEST_USER_ID,
         title: 'Integration Test Document',
         contentHash,
         sourceType: 'txt',
@@ -103,7 +143,7 @@ describe('Ingestion → Retrieval integration (requires Docker)', () => {
 
     const retrieval = app.get(RetrievalService);
     const results = await retrieval.retrieve('ACID transactions PostgreSQL', {
-      userId: DEV_USER_ID,
+      userId: TEST_USER_ID,
       topK: 1,
     });
 

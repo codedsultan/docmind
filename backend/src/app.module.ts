@@ -17,6 +17,9 @@ import { AgentModule } from './modules/agent/agent.module';
 import { NotesModule } from './modules/notes/notes.module';
 import { TasksModule } from './modules/tasks/tasks.module';
 import { TraceModule } from './modules/trace/trace.module';
+import { AuthModule } from './modules/auth/auth.module';
+import { JwtAuthGuard } from './modules/auth/jwt-auth.guard';
+import { Reflector } from '@nestjs/core';
 import * as Joi from 'joi';
 
 const configValidationSchema = Joi.object({
@@ -25,10 +28,12 @@ const configValidationSchema = Joi.object({
   REDIS_PORT: Joi.number().integer().required(),
   GEMINI_API_KEY: Joi.string().required(),
   PROVIDER: Joi.string().valid('gemini', 'groq').default('gemini'),
-  INTERNAL_API_KEY: Joi.string().required(),
+  JWT_SECRET: Joi.string().min(32).required(),
+  INTERNAL_API_KEY: Joi.string().optional(),
   EMAIL_DIGEST_RECIPIENT: Joi.string().email().optional(),
   EMAIL_MODE: Joi.string().valid('log', 'send').default('log'),
   AGENT_MAX_ITERATIONS: Joi.number().integer().min(1).max(50).default(10),
+  CORS_ORIGIN: Joi.string().uri().optional().default('http://localhost:3400'),
 }).unknown(true);
 
 @Module({
@@ -43,6 +48,7 @@ const configValidationSchema = Joi.object({
     PrismaModule,
     RedisModule,
     QueuesModule,
+    AuthModule,
     IngestionModule,
     ProvidersModule,
     RetrievalModule,
@@ -54,6 +60,14 @@ const configValidationSchema = Joi.object({
     TraceModule,
   ],
   controllers: [AppController],
-  providers: [AppService, { provide: APP_GUARD, useClass: ThrottlerGuard }],
+  providers: [
+    AppService,
+    { provide: APP_GUARD, useClass: ThrottlerGuard },
+    {
+      provide: APP_GUARD,
+      useFactory: (reflector: Reflector) => new JwtAuthGuard(reflector),
+      inject: [Reflector],
+    },
+  ],
 })
 export class AppModule {}

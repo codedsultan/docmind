@@ -22,24 +22,24 @@ export default async function HomePage() {
     <main className="flex min-h-screen flex-col items-center justify-center gap-4 p-8">
       <h1 className="text-3xl font-bold">docmind</h1>
 
-      <div className="rounded-lg border p-6 text-center">
-        <p className="text-sm text-gray-500 mb-2">Backend says:</p>
+      <div className="rounded-lg border p-6 text-center dark:border-gray-700">
+        <p className="text-sm text-gray-500 mb-2 dark:text-gray-400">Backend says:</p>
 
         {data ? (
           <>
             <p className="text-xl font-medium">{data.message}</p>
-            <p className="text-xs text-gray-400 mt-2">{data.timestamp}</p>
+            <p className="text-xs text-gray-400 mt-2 dark:text-gray-500">{data.timestamp}</p>
           </>
         ) : (
-          <p className="text-red-500 text-sm">
+          <p className="text-red-500 text-sm dark:text-red-400">
             Could not reach API — {error}
           </p>
         )}
       </div>
 
-      <p className="text-xs text-gray-400">
+      <p className="text-xs text-gray-400 dark:text-gray-500">
         Fetched server-side via{' '}
-        <code className="bg-gray-100 px-1 rounded">API_BASE_URL_SERVER</code>
+        <code className="bg-gray-100 px-1 rounded dark:bg-gray-800 dark:text-gray-300">API_BASE_URL_SERVER</code>
       </p>
     </main>
   );

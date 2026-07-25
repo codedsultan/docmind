@@ -2,7 +2,6 @@ import { InjectQueue } from '@nestjs/bullmq';
 import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { Queue } from 'bullmq';
 import { PrismaService } from '../../prisma/prisma.service';
-import { DEV_USER_ID } from '../../common/constants';
 import { UploadDocumentDto } from './dto/upload-document.dto';
 import { ParserService } from './parsers/parser.service';
 import { createHash } from 'crypto';
@@ -26,7 +25,7 @@ export class IngestionService {
   async uploadDocument(
     file: Express.Multer.File,
     dto: UploadDocumentDto,
-    userId: string = DEV_USER_ID,
+    userId: string,
   ) {
     const contentHash = createHash('sha256').update(file.buffer).digest('hex');
 
@@ -103,7 +102,7 @@ export class IngestionService {
     this.logger.log(`Enqueued ingestion job for document ${documentId}`);
   }
 
-  async listDocuments(userId: string = DEV_USER_ID) {
+  async listDocuments(userId: string) {
     return this.prisma.document.findMany({
       where: { userId, isActive: true },
       orderBy: { createdAt: 'desc' },
@@ -121,7 +120,7 @@ export class IngestionService {
     });
   }
 
-  async getDocument(id: string, userId: string = DEV_USER_ID) {
+  async getDocument(id: string, userId: string) {
     const doc = await this.prisma.document.findFirst({
       where: { id, userId, isActive: true },
       select: {
@@ -140,7 +139,7 @@ export class IngestionService {
     return doc;
   }
 
-  async deleteDocument(id: string, userId: string = DEV_USER_ID) {
+  async deleteDocument(id: string, userId: string) {
     const doc = await this.prisma.document.findFirst({
       where: { id, userId },
     });

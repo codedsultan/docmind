@@ -6,7 +6,6 @@ import {
   EMBEDDING_PROVIDER,
   EmbeddingProvider,
 } from '../providers/embedding.provider';
-import { DEV_USER_ID } from '../../common/constants';
 import { reciprocalRankFusion } from './rrf';
 import { RERANKER, Reranker } from './reranker.interface';
 import { REDIS_CLIENT } from '../../redis/redis.module';
@@ -62,7 +61,10 @@ export class RetrievalService {
     query: string,
     options?: RetrievalOptions,
   ): Promise<RetrievedChunk[]> {
-    const userId = options?.userId ?? DEV_USER_ID;
+    const userId = options?.userId;
+    if (!userId) {
+      throw new Error('retrieve() requires a userId — caller must supply it');
+    }
     const topK = options?.topK ?? 5;
     const visibility = options?.visibility;
 

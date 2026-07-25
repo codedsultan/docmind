@@ -21,14 +21,14 @@ function Bar({ label, value, max }: { label: string; value: number; max: number 
   const pct = max > 0 ? Math.round((value / max) * 100) : 0;
   return (
     <div className="flex items-center gap-3">
-      <span className="w-24 text-right text-xs text-gray-500">{label}</span>
-      <div className="flex-1 rounded bg-gray-100" style={{ height: 16 }}>
+      <span className="w-24 text-right text-xs text-gray-500 dark:text-gray-400">{label}</span>
+      <div className="flex-1 rounded bg-gray-100 dark:bg-gray-700" style={{ height: 16 }}>
         <div
           className="h-full rounded bg-blue-400 transition-all"
           style={{ width: `${pct}%` }}
         />
       </div>
-      <span className="w-16 text-xs text-gray-700">{value}ms</span>
+      <span className="w-16 text-xs text-gray-700 dark:text-gray-300">{value}ms</span>
     </div>
   );
 }
@@ -46,8 +46,8 @@ export default function TraceDetailPage() {
       .finally(() => setLoading(false));
   }, [id]);
 
-  if (loading) return <p className="p-8 text-gray-500">Loading…</p>;
-  if (error || !trace) return <p className="p-8 text-red-600">{error ?? 'Not found'}</p>;
+  if (loading) return <p className="p-8 text-gray-500 dark:text-gray-400">Loading…</p>;
+  if (error || !trace) return <p className="p-8 text-red-600 dark:text-red-400">{error ?? 'Not found'}</p>;
 
   const latencyEntries = Object.entries(trace.latencyBreakdown);
   const maxLatency = Math.max(...Object.values(trace.latencyBreakdown));
@@ -55,21 +55,21 @@ export default function TraceDetailPage() {
   return (
     <div className="mx-auto max-w-4xl space-y-8 px-4 py-8">
       <div>
-        <Link href="/admin/traces" className="mb-2 inline-block text-sm text-blue-600 hover:underline">
+        <Link href="/admin/traces" className="mb-2 inline-block text-sm text-blue-600 hover:underline dark:text-blue-400">
           ← All traces
         </Link>
-        <h1 className="text-xl font-bold text-gray-900 break-words">{trace.query}</h1>
-        <p className="mt-1 text-xs text-gray-500">
+        <h1 className="text-xl font-bold text-gray-900 break-words dark:text-gray-100">{trace.query}</h1>
+        <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
           {new Date(trace.createdAt).toLocaleString()} · {trace.model}
         </p>
       </div>
 
       {/* Latency waterfall */}
       <section>
-        <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-gray-500">
+        <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
           Latency Waterfall
         </h2>
-        <div className="space-y-2 rounded-lg border border-gray-200 bg-white p-4">
+        <div className="space-y-2 rounded-lg border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-800">
           {latencyEntries.map(([key, val]) => (
             <Bar key={key} label={key} value={val} max={maxLatency} />
           ))}
@@ -78,14 +78,14 @@ export default function TraceDetailPage() {
 
       {/* Cache flags */}
       <section>
-        <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-gray-500">
+        <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
           Cache
         </h2>
         <div className="flex gap-4">
-          <div className={`rounded px-3 py-2 text-sm ${trace.cacheFlags.embeddingHit ? 'bg-green-50 text-green-700' : 'bg-gray-50 text-gray-500'}`}>
+          <div className={`rounded px-3 py-2 text-sm ${trace.cacheFlags.embeddingHit ? 'bg-green-50 text-green-700 dark:bg-green-900/30 dark:text-green-400' : 'bg-gray-50 text-gray-500 dark:bg-gray-700 dark:text-gray-400'}`}>
             Embedding cache: {trace.cacheFlags.embeddingHit ? 'HIT' : 'MISS'}
           </div>
-          <div className={`rounded px-3 py-2 text-sm ${trace.cacheFlags.answerHit ? 'bg-green-50 text-green-700' : 'bg-gray-50 text-gray-500'}`}>
+          <div className={`rounded px-3 py-2 text-sm ${trace.cacheFlags.answerHit ? 'bg-green-50 text-green-700 dark:bg-green-900/30 dark:text-green-400' : 'bg-gray-50 text-gray-500 dark:bg-gray-700 dark:text-gray-400'}`}>
             Answer cache: {trace.cacheFlags.answerHit ? 'HIT' : 'MISS'}
           </div>
         </div>
@@ -94,17 +94,17 @@ export default function TraceDetailPage() {
       {/* Retrieved chunks */}
       {Array.isArray(trace.retrievedChunks) && trace.retrievedChunks.length > 0 && (
         <section>
-          <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-gray-500">
+          <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
             Retrieved Chunks ({trace.retrievedChunks.length})
           </h2>
           <div className="space-y-2">
             {(trace.retrievedChunks as Array<Record<string, unknown>>).map((chunk, i) => (
-              <div key={i} className="rounded-lg border border-gray-200 bg-white p-3 text-xs">
-                <div className="mb-1 flex justify-between text-gray-500">
+              <div key={i} className="rounded-lg border border-gray-200 bg-white p-3 text-xs dark:border-gray-700 dark:bg-gray-800">
+                <div className="mb-1 flex justify-between text-gray-500 dark:text-gray-400">
                   <span>{String(chunk.documentTitle ?? chunk.documentId ?? 'Unknown')}</span>
                   <span>score: {typeof chunk.fusedScore === 'number' ? chunk.fusedScore.toFixed(3) : '–'}</span>
                 </div>
-                <p className="text-gray-700">{String(chunk.content ?? '').slice(0, 300)}</p>
+                <p className="text-gray-700 dark:text-gray-300">{String(chunk.content ?? '').slice(0, 300)}</p>
               </div>
             ))}
           </div>
@@ -114,12 +114,12 @@ export default function TraceDetailPage() {
       {/* Tool call audit IDs */}
       {trace.toolCallAuditIds.length > 0 && (
         <section>
-          <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-gray-500">
+          <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
             Tool Calls ({trace.toolCallAuditIds.length})
           </h2>
-          <ul className="space-y-1 font-mono text-xs text-gray-600">
+          <ul className="space-y-1 font-mono text-xs text-gray-600 dark:text-gray-400">
             {trace.toolCallAuditIds.map((auditId) => (
-              <li key={auditId} className="rounded bg-gray-50 px-2 py-1">
+              <li key={auditId} className="rounded bg-gray-50 px-2 py-1 dark:bg-gray-800">
                 {auditId}
               </li>
             ))}

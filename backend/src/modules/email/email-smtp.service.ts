@@ -14,12 +14,12 @@ export class SmtpEmailService implements EmailService {
   constructor(private readonly config: ConfigService) {
     this.host = this.config.get<string>('SMTP_HOST') ?? 'localhost';
     this.port = this.config.get<number>('SMTP_PORT') ?? 587;
-    this.user = this.config.get<string>('SMTP_USER') ?? '';
-    this.pass = this.config.get<string>('SMTP_PASS') ?? '';
+    this.user = this.config.getOrThrow<string>('SMTP_USER');
+    this.pass = this.config.getOrThrow<string>('SMTP_PASS');
 
     if (!this.user && !this.pass) {
       this.logger.warn(
-        'SMTP credentials not configured — emails will not be delivered',
+        'SMTP credentials resolved to empty — emails will not be delivered',
       );
     }
   }

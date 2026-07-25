@@ -201,11 +201,19 @@ describe('AgentService — parseModelOutput fence stripping', () => {
     const service = await buildService(provider, makeRegistry());
 
     const events = await collectEvents(service, 'Test malformed');
+    const tokenContent = events
+      .filter((e) => e.type === 'token')
+      .map((e) => e.data)
+      .join('');
 
     // Must emit tokens (final answer path) and done — never a tool_call
     expect(events.some((e) => e.type === 'token')).toBe(true);
     expect(events.some((e) => e.type === 'done')).toBe(true);
     expect(events.some((e) => e.type === 'tool_call')).toBe(false);
+    // Raw malformed JSON must never appear in the streamed response
+    expect(tokenContent).not.toContain(
+      '{"tool":"search","params":{"query":"test"}',
+    );
   });
 
   it('treats JSON with trailing comma (invalid) as a final answer', async () => {
@@ -214,9 +222,16 @@ describe('AgentService — parseModelOutput fence stripping', () => {
     const service = await buildService(provider, makeRegistry());
 
     const events = await collectEvents(service, 'Test trailing comma');
+    const tokenContent = events
+      .filter((e) => e.type === 'token')
+      .map((e) => e.data)
+      .join('');
 
     expect(events.some((e) => e.type === 'done')).toBe(true);
     expect(events.some((e) => e.type === 'tool_call')).toBe(false);
+    expect(tokenContent).not.toContain(
+      '{"tool":"search","params":{"query":"test"},}',
+    );
   });
 
   it('treats JSON with leading prose as a final answer', async () => {
@@ -226,9 +241,15 @@ describe('AgentService — parseModelOutput fence stripping', () => {
     const service = await buildService(provider, makeRegistry());
 
     const events = await collectEvents(service, 'Test prose');
+    const tokenContent = events
+      .filter((e) => e.type === 'token')
+      .map((e) => e.data)
+      .join('');
 
     // The regex requires the JSON to be the ONLY content; prose disqualifies it
     expect(events.some((e) => e.type === 'done')).toBe(true);
     expect(events.some((e) => e.type === 'tool_call')).toBe(false);
+    // Embedded raw JSON object must not appear verbatim in streamed tokens
+    expect(tokenContent).not.toContain('{"tool":"search","params":{}}');
   });
 });

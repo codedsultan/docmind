@@ -32,20 +32,20 @@ export function ConfirmationCard({ proposal, onConfirmed, onCancel }: Props) {
   }
 
   return (
-    <div className="my-4 rounded-lg border border-amber-200 bg-amber-50 p-4">
-      <p className="mb-2 text-sm font-semibold text-amber-800">
+    <div className="my-4 rounded-lg border border-amber-200 bg-amber-50 p-4 dark:border-amber-800 dark:bg-amber-900/20">
+      <p className="mb-2 text-sm font-semibold text-amber-800 dark:text-amber-300">
         Action requires confirmation
       </p>
-      <div className="mb-3 rounded border border-amber-100 bg-white p-3">
-        <p className="whitespace-pre-wrap font-mono text-xs text-gray-700">
+      <div className="mb-3 rounded border border-amber-100 bg-white p-3 dark:border-amber-700 dark:bg-gray-800">
+        <p className="whitespace-pre-wrap font-mono text-xs text-gray-700 dark:text-gray-300">
           {proposal.preview}
         </p>
       </div>
 
       {uiState === 'confirmed' ? (
-        <p className="text-sm text-green-700">Confirmed — action sent.</p>
+        <p className="text-sm text-green-700 dark:text-green-400">Confirmed — action sent.</p>
       ) : uiState === 'error' ? (
-        <p className="text-sm text-red-600">{errorMsg}</p>
+        <p className="text-sm text-red-600 dark:text-red-400">{errorMsg}</p>
       ) : (
         <div className="flex gap-3">
           <button
@@ -58,7 +58,7 @@ export function ConfirmationCard({ proposal, onConfirmed, onCancel }: Props) {
           <button
             disabled={uiState === 'pending'}
             onClick={onCancel}
-            className="rounded border border-gray-300 px-4 py-1.5 text-sm text-gray-700 hover:bg-gray-50 disabled:opacity-60"
+            className="rounded border border-gray-300 px-4 py-1.5 text-sm text-gray-700 hover:bg-gray-50 disabled:opacity-60 dark:border-gray-600 dark:text-gray-300 dark:hover:bg-gray-700"
           >
             Cancel
           </button>

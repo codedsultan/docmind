@@ -84,6 +84,12 @@ A hand-labeled 18-case eval set (`backend/eval/retrieval.json`) runs as a **requ
 
 ## Feature Walkthrough
 
+> All flows require authentication. Start by registering an account.
+
+**0. Register (or log in)**
+
+Navigate to `/auth/register` → enter email + password. On success, you're redirected to `/documents` with an httpOnly JWT cookie. The global `JwtAuthGuard` protects all routes; the login page at `/auth/login` handles returning users. Logout is available in the navigation.
+
 **1. Upload a document**
 
 Drag or select a file → the backend parses it, chunks it (800-char target, 150-char overlap), embeds each chunk with Gemini `gemini-embedding-001` (768 dimensions), and stores chunks with an HNSW-indexed `vector(768)` column. The job runs async via BullMQ so the upload response is immediate.
@@ -164,7 +170,7 @@ The current build is deliberately minimal to prove the patterns work end-to-end.
 
 **Distributed tracing** — `QueryTrace` and `ToolCallAudit` rows give per-query observability. The natural upgrade is OpenTelemetry: attach a trace ID at the request boundary and propagate it through BullMQ jobs, provider calls, and tool invocations without changing application logic.
 
-**Auth** — TODO
+**Auth** — JWT-based httpOnly cookie auth with Redis-backed token blocklist on logout. Users register with email + password (argon2 hashed). Every route except health/docs/auth is protected by a global `JwtAuthGuard`; per-resource ownership enforced by `@CurrentUser()` decorator. JWT expiry is 1d; rate limits on login/register (5/min) and agent endpoints (10–20/min).
 
 **Embedding fallback** — generation fallback between Gemini and Groq is straightforward because both models produce text to the same interface. Embedding fallback is intentionally omitted: Gemini and Groq use different embedding spaces, so a chunk indexed with Gemini embeddings cannot be queried with Groq embeddings without re-embedding the entire corpus. 
 

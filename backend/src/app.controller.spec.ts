@@ -4,7 +4,6 @@ import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { PrismaService } from './prisma/prisma.service';
 import { QueuesService } from './queues/queues.service';
-import { AuthGuard } from './common/guards/auth.guard';
 
 describe('AppController', () => {
   let appController: AppController;
@@ -17,7 +16,6 @@ describe('AppController', () => {
       controllers: [AppController],
       providers: [
         AppService,
-        AuthGuard,
         {
           provide: PrismaService,
           useValue: {

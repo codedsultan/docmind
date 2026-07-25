@@ -9,6 +9,8 @@ import { NotificationsProcessor } from './processors/notifications.processor';
       useFactory: () => ({
         connection: {
           url: process.env.REDIS_URL,
+          lazyConnect: true,
+          enableReadyCheck: false,
         },
       }),
     }),

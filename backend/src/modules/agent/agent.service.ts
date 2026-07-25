@@ -223,9 +223,17 @@ export class AgentService {
             },
           });
         } else {
-          // Final answer — word-tokenise for SSE token stream
+          // Final answer — word-tokenise for SSE token stream.
+          // Guard: if the raw output looks like a (malformed) JSON tool call,
+          // never surface it — emit a safe fallback instead.
+          const EMBEDDED_TOOL_JSON_RE = /\{[\s\S]*"tool"[\s\S]*\}/;
           const answer = update.lastModelOutput ?? '';
-          for (const token of answer.split(' ')) {
+          const safeAnswer =
+            answer.trimStart().startsWith('{') ||
+            EMBEDDED_TOOL_JSON_RE.test(answer)
+              ? "I couldn't complete that request."
+              : answer;
+          for (const token of safeAnswer.split(' ')) {
             emit({ type: 'token', data: token + ' ' });
           }
         }

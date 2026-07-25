@@ -5,8 +5,11 @@ import {
   Logger,
   Optional,
   Post,
-  UseGuards,
 } from '@nestjs/common';
+import {
+  CurrentUser,
+  JwtPayload,
+} from '../../common/decorators/current-user.decorator';
 import {
   ApiBody,
   ApiOperation,
@@ -16,7 +19,6 @@ import {
 } from '@nestjs/swagger';
 import { createHash } from 'crypto';
 import type Redis from 'ioredis';
-import { AuthGuard } from '../../common/guards/auth.guard';
 import {
   RetrievalService,
   RetrievedChunk,
@@ -86,7 +88,6 @@ export class QueryResponseDto {
 export type { Citation };
 
 @ApiTags('chat')
-@UseGuards(AuthGuard)
 @Controller('v1/chat')
 export class QueryController {
   private readonly logger = new Logger(QueryController.name);
@@ -105,9 +106,15 @@ export class QueryController {
   @ApiBody({ type: QueryDto })
   @ApiResponse({ status: 200, type: QueryResponseDto })
   @ApiResponse({ status: 400, description: 'Invalid query input' })
-  async query(@Body() dto: QueryDto): Promise<QueryResponseDto> {
+  async query(
+    @CurrentUser() user: JwtPayload,
+    @Body() dto: QueryDto,
+  ): Promise<QueryResponseDto> {
     const topK = dto.topK ?? 5;
-    const chunks = await this.retrievalService.retrieve(dto.query, { topK });
+    const chunks = await this.retrievalService.retrieve(dto.query, {
+      topK,
+      userId: user.sub,
+    });
 
     const sortedChunkIds = [...chunks.map((c) => c.chunkId)].sort().join(',');
     const answerCacheKey = `answer:${createHash('sha256')

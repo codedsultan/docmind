@@ -58,6 +58,12 @@ export class PrismaService
     // Create the Prisma adapter
     const adapter = new PrismaPg(pool);
 
+    // pg-pool emits 'error' on the Pool EventEmitter when a client
+    // connection is terminated (e.g. 57P01 during container shutdown).
+    // Without a listener, EventEmitter.emit('error', ...) throws as an
+    // unhandled exception. Prisma's $disconnect() handles actual cleanup.
+    pool.on('error', () => {});
+
     // Pass the adapter to PrismaClient
     super({
       adapter,

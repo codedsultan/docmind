@@ -73,7 +73,7 @@ describe('IngestionService', () => {
       prisma.document.findUnique.mockResolvedValue(null);
       prisma.document.create.mockResolvedValue(created);
 
-      const result = await service.uploadDocument(file, {});
+      const result = await service.uploadDocument(file, {}, 'user-1');
 
       expect(prisma.document.create).toHaveBeenCalled();
       expect(queue.add).toHaveBeenCalledWith(
@@ -91,7 +91,7 @@ describe('IngestionService', () => {
 
       prisma.document.findUnique.mockResolvedValue(existing);
 
-      const result = await service.uploadDocument(file, {});
+      const result = await service.uploadDocument(file, {}, 'user-1');
 
       expect(prisma.document.create).not.toHaveBeenCalled();
       expect(queue.add).not.toHaveBeenCalled();
@@ -117,7 +117,7 @@ describe('IngestionService', () => {
       prisma.document.findUnique.mockResolvedValue(softDeleted);
       prisma.document.update.mockResolvedValue(reactivated);
 
-      const result = await service.uploadDocument(file, {});
+      const result = await service.uploadDocument(file, {}, 'user-1');
 
       /* eslint-disable @typescript-eslint/no-unsafe-assignment */
       const expectedUpdate = expect.objectContaining({

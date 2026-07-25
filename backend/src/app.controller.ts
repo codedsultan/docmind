@@ -1,8 +1,8 @@
-import { Controller, Get, Post, Body, UseGuards } from '@nestjs/common';
+import { Controller, Get, Post, Body } from '@nestjs/common';
 import { AppService } from './app.service';
 import { QueuesService } from './queues/queues.service';
-import { AuthGuard } from './common/guards/auth.guard';
 import { NotificationDto } from './common/dto/notification.dto';
+import { Public } from './common/decorators/public.decorator';
 
 @Controller()
 export class AppController {
@@ -11,28 +11,31 @@ export class AppController {
     private readonly queuesService: QueuesService,
   ) {}
 
+  @Public()
   @Get()
   getRoot() {
     return this.appService.getHello();
   }
 
+  @Public()
   @Get('hello')
   getHello() {
     return this.appService.getHello();
   }
 
+  @Public()
   @Get('health')
   getHealth() {
     return { status: 'ok', timestamp: new Date().toISOString() };
   }
 
-  @UseGuards(AuthGuard)
+  @Public()
   @Post('notify')
   async notify(@Body() body: NotificationDto) {
     return this.queuesService.sendNotification(body);
   }
 
-  @UseGuards(AuthGuard)
+  @Public()
   @Get('queue/stats')
   async queueStats() {
     return this.queuesService.getQueueStats();

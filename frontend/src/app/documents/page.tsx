@@ -80,12 +80,12 @@ export default function DocumentsPage() {
       {/* Upload form */}
       <form
         onSubmit={handleUpload}
-        className="space-y-4 rounded-lg border border-gray-200 p-4"
+        className="space-y-4 rounded-lg border border-gray-200 p-4 dark:border-gray-700"
       >
         <h2 className="text-lg font-semibold">Upload Document</h2>
 
         <div>
-          <label className="block text-sm font-medium text-gray-700">
+          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
             File (PDF, Markdown, or Text)
           </label>
           <input
@@ -93,31 +93,31 @@ export default function DocumentsPage() {
             name="file"
             accept=".pdf,.md,.txt,text/plain,text/markdown,application/pdf"
             required
-            className="mt-1 block w-full text-sm text-gray-500 file:mr-4 file:rounded file:border-0 file:bg-gray-100 file:px-4 file:py-2 file:text-sm file:font-medium file:text-gray-700 hover:file:bg-gray-200"
+            className="mt-1 block w-full text-sm text-gray-500 file:mr-4 file:rounded file:border-0 file:bg-gray-100 file:px-4 file:py-2 file:text-sm file:font-medium file:text-gray-700 hover:file:bg-gray-200 dark:text-gray-400 dark:file:bg-gray-700 dark:file:text-gray-300 dark:hover:file:bg-gray-600"
           />
         </div>
 
         <div className="flex gap-4">
           <div className="flex-1">
-            <label className="block text-sm font-medium text-gray-700">
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
               Title (optional)
             </label>
             <input
               type="text"
               name="title"
               placeholder="Derived from filename if empty"
-              className="mt-1 block w-full rounded border border-gray-300 px-3 py-2 text-sm"
+              className="mt-1 block w-full rounded border border-gray-300 px-3 py-2 text-sm dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100"
             />
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700">
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
               Visibility
             </label>
             <select
               name="visibility"
               defaultValue="private"
-              className="mt-1 block rounded border border-gray-300 px-3 py-2 text-sm"
+              className="mt-1 block rounded border border-gray-300 px-3 py-2 text-sm dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100"
             >
               <option value="private">Private</option>
               <option value="public">Public</option>
@@ -134,22 +134,22 @@ export default function DocumentsPage() {
         </button>
 
         {uploadMessage && (
-          <p className="text-sm text-gray-600">{uploadMessage}</p>
+          <p className="text-sm text-gray-600 dark:text-gray-400">{uploadMessage}</p>
         )}
       </form>
 
       {/* Error message */}
       {(error || deleteMutation.error) && (
-        <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700">
+        <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700 dark:border-red-800 dark:bg-red-900/20 dark:text-red-400">
           {error instanceof Error ? error.message : deleteMutation.error instanceof Error ? deleteMutation.error.message : 'An error occurred'}
         </div>
       )}
 
       {/* Document list */}
       {loading ? (
-        <p className="text-sm text-gray-500">Loading documents...</p>
+        <p className="text-sm text-gray-500 dark:text-gray-400">Loading documents...</p>
       ) : documents.length === 0 ? (
-        <div className="rounded-lg border border-dashed border-gray-300 p-8 text-center text-sm text-gray-500">
+        <div className="rounded-lg border border-dashed border-gray-300 p-8 text-center text-sm text-gray-500 dark:border-gray-600 dark:text-gray-400">
           No documents yet. Upload a PDF, Markdown, or text file to get
           started.
         </div>
@@ -158,21 +158,21 @@ export default function DocumentsPage() {
           {documents.map((doc) => (
             <div
               key={doc.id}
-              className="flex items-center justify-between rounded-lg border border-gray-200 p-4"
+              className="flex items-center justify-between rounded-lg border border-gray-200 p-4 dark:border-gray-700"
             >
               <div className="min-w-0 flex-1">
-                <p className="truncate font-medium text-gray-900">
+                <p className="truncate font-medium text-gray-900 dark:text-gray-100">
                   {doc.title}
                 </p>
-                <p className="text-xs text-gray-500">
+                <p className="text-xs text-gray-500 dark:text-gray-400">
                   {doc.sourceType} &middot;{' '}
                   <span
                     className={
                       doc.status === 'ready'
-                        ? 'text-green-600'
+                        ? 'text-green-600 dark:text-green-400'
                         : doc.status === 'failed'
-                          ? 'text-red-600'
-                          : 'text-yellow-600'
+                          ? 'text-red-600 dark:text-red-400'
+                          : 'text-yellow-600 dark:text-yellow-400'
                     }
                   >
                     {doc.status}
@@ -182,7 +182,7 @@ export default function DocumentsPage() {
               </div>
               <button
                 onClick={() => handleDelete(doc.id)}
-                className="ml-4 shrink-0 rounded px-3 py-1 text-xs text-red-600 hover:bg-red-50"
+                className="ml-4 shrink-0 rounded px-3 py-1 text-xs text-red-600 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-900/30"
               >
                 Delete
               </button>
