@@ -52,6 +52,9 @@ describe('Ownership (real Postgres, requires Docker)', () => {
     const port = container.getMappedPort(5432);
     const dbUrl = `postgresql://postgres:test@localhost:${port}/docmind_own_test`;
     process.env['DATABASE_URL'] = dbUrl;
+    process.env['REDIS_HOST'] = 'localhost';
+    process.env['REDIS_PORT'] = '6399';
+    process.env['REDIS_URL'] = 'redis://localhost:6399';
     process.env['JWT_SECRET'] = JWT_SECRET;
     process.env['GEMINI_API_KEY'] =
       process.env['GEMINI_API_KEY'] ?? 'placeholder';

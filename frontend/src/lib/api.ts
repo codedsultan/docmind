@@ -24,13 +24,14 @@ export function clearClientToken(): void {
   clientToken = null;
 }
 
-function getAuthToken(): string | null {
+async function getAuthToken(): Promise<string | null> {
   if (typeof window === 'undefined') {
     try {
       // dynamic require — works in server components / route handlers
       // eslint-disable-next-line @typescript-eslint/no-require-imports
       const { cookies } = require('next/headers');
-      return cookies().get('auth_token')?.value ?? null;
+      const cookieStore = await cookies();
+      return cookieStore.get('auth_token')?.value ?? null;
     } catch {
       return null;
     }
@@ -39,8 +40,8 @@ function getAuthToken(): string | null {
   return clientToken;
 }
 
-function getAuthHeaders(): Record<string, string> {
-  const token = getAuthToken();
+async function getAuthHeaders(): Promise<Record<string, string>> {
+  const token = await getAuthToken();
   if (token) {
     return { Authorization: `Bearer ${token}` };
   }
@@ -70,7 +71,7 @@ export async function apiFetch<T>(
   const res = await fetch(url, {
     headers: {
       'Content-Type': 'application/json',
-      ...getAuthHeaders(),
+      ...(await getAuthHeaders()),
       ...options.headers,
     },
     ...options,
@@ -107,7 +108,7 @@ export async function uploadDocument(
   const url = `${API_BASE_URL}/v1/documents/upload`;
   const res = await fetch(url, {
     method: 'POST',
-    headers: getAuthHeaders(),
+    headers: await getAuthHeaders(),
     body: formData,
   });
 
@@ -130,7 +131,7 @@ export async function deleteDocument(id: string): Promise<void> {
   const url = `${API_BASE_URL}/v1/documents/${id}`;
   const res = await fetch(url, {
     method: 'DELETE',
-    headers: getAuthHeaders(),
+    headers: await getAuthHeaders(),
   });
 
   if (!res.ok) {

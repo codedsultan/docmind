@@ -35,13 +35,18 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
       throw new UnauthorizedException('User no longer exists');
     }
 
-    // Check Redis blocklist
+    // Check Redis blocklist — fail open (skip check) if Redis is unavailable
     if (payload.iat) {
-      const blocklistedIat = await this.redis.get(
-        `blocklist:user:${payload.sub}`,
-      );
-      if (blocklistedIat && payload.iat <= Number(blocklistedIat)) {
-        throw new UnauthorizedException('Token has been revoked');
+      try {
+        const blocklistedIat = await this.redis.get(
+          `blocklist:user:${payload.sub}`,
+        );
+        if (blocklistedIat && payload.iat <= Number(blocklistedIat)) {
+          throw new UnauthorizedException('Token has been revoked');
+        }
+      } catch {
+        // Redis unavailable — skip blocklist check; token still validated
+        // by JWT signature + expiry.
       }
     }
 

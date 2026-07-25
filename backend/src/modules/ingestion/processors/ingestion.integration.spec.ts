@@ -45,6 +45,11 @@ describe('Ingestion → Retrieval integration (requires Docker)', () => {
     const port = container.getMappedPort(5432);
     const dbUrl = `postgresql://postgres:test@localhost:${port}/docmind_test`;
     process.env['DATABASE_URL'] = dbUrl;
+    process.env['REDIS_HOST'] = 'localhost';
+    process.env['REDIS_PORT'] = '6399';
+    process.env['REDIS_URL'] = 'redis://localhost:6399';
+    process.env['GEMINI_API_KEY'] = 'placeholder';
+    process.env['JWT_SECRET'] = 'test-integration-jwt-secret-min32chars!!';
 
     const backendDir = __dirname.includes('/backend/')
       ? __dirname.split('/backend/')[0] + '/backend'

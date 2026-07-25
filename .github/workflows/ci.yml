@@ -95,15 +95,27 @@ jobs:
           retention-days: 2
 
   integration-test:
-    name: Integration Tests (pgvector)
+    name: Integration Tests (pgvector + Redis)
     runs-on: ubuntu-latest
     needs: [test-backend]
     if: needs.test-backend.result == 'success'
     env:
-      GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+      GEMINI_API_KEY: placeholder
       INTERNAL_API_KEY: placeholder
+      JWT_SECRET: ci-integration-test-secret-min32bytes!
       REDIS_HOST: localhost
-      REDIS_PORT: "6379"
+      REDIS_PORT: "6399"
+      REDIS_URL: redis://localhost:6399
+    services:
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6399:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
