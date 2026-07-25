@@ -62,8 +62,8 @@ export class TraceService {
     return { items, total, page, limit };
   }
 
-  async findOne(id: string) {
-    return this.prisma.queryTrace.findUnique({ where: { id } });
+  async findOne(id: string, userId: string) {
+    return this.prisma.queryTrace.findFirst({ where: { id, userId } });
   }
 
   @OnEvent('TurnCompleted')

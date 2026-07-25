@@ -7,8 +7,6 @@ import {
   Param,
   Patch,
   Post,
-  Req,
-  UseGuards,
 } from '@nestjs/common';
 import {
   ApiBody,
@@ -18,9 +16,10 @@ import {
   ApiTags,
 } from '@nestjs/swagger';
 import { IsOptional, IsString, MaxLength, MinLength } from 'class-validator';
-import type { Request } from 'express';
-import { AuthGuard } from '../../common/guards/auth.guard';
-import { DEV_USER_ID } from '../../common/constants';
+import {
+  CurrentUser,
+  JwtPayload,
+} from '../../common/decorators/current-user.decorator';
 import { NotesService } from './notes.service';
 
 export class CreateNoteDto {
@@ -46,53 +45,44 @@ export class UpdateNoteDto {
 
 @ApiTags('notes')
 @Controller('v1/notes')
-@UseGuards(AuthGuard)
 export class NotesController {
   constructor(private readonly notesService: NotesService) {}
-
-  private userId(req: Request): string {
-    return (req as unknown as { userId?: string }).userId ?? DEV_USER_ID;
-  }
 
   @Post()
   @ApiOperation({ summary: 'Create a note' })
   @ApiBody({ type: CreateNoteDto })
   @ApiResponse({ status: 201 })
-  create(@Body() dto: CreateNoteDto, @Req() req: Request) {
-    return this.notesService.create(
-      this.userId(req),
-      dto.content,
-      dto.sourceQueryId,
-    );
+  create(@CurrentUser() user: JwtPayload, @Body() dto: CreateNoteDto) {
+    return this.notesService.create(user.sub, dto.content, dto.sourceQueryId);
   }
 
   @Get()
   @ApiOperation({ summary: 'List all notes for the user' })
-  findAll(@Req() req: Request) {
-    return this.notesService.findAll(this.userId(req));
+  findAll(@CurrentUser() user: JwtPayload) {
+    return this.notesService.findAll(user.sub);
   }
 
   @Get(':id')
   @ApiOperation({ summary: 'Get a single note' })
-  findOne(@Param('id') id: string, @Req() req: Request) {
-    return this.notesService.findOne(this.userId(req), id);
+  findOne(@CurrentUser() user: JwtPayload, @Param('id') id: string) {
+    return this.notesService.findOne(user.sub, id);
   }
 
   @Patch(':id')
   @ApiOperation({ summary: 'Update note content' })
   @ApiBody({ type: UpdateNoteDto })
   update(
+    @CurrentUser() user: JwtPayload,
     @Param('id') id: string,
     @Body() dto: UpdateNoteDto,
-    @Req() req: Request,
   ) {
-    return this.notesService.update(this.userId(req), id, dto.content);
+    return this.notesService.update(user.sub, id, dto.content);
   }
 
   @Delete(':id')
   @HttpCode(204)
   @ApiOperation({ summary: 'Delete a note' })
-  remove(@Param('id') id: string, @Req() req: Request) {
-    return this.notesService.remove(this.userId(req), id);
+  remove(@CurrentUser() user: JwtPayload, @Param('id') id: string) {
+    return this.notesService.remove(user.sub, id);
   }
 }

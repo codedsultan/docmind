@@ -69,40 +69,40 @@ export default function TasksPage() {
   return (
     <div className="mx-auto max-w-3xl px-4 py-8">
       <div className="mb-6 flex items-center justify-between">
-        <h1 className="text-2xl font-bold text-gray-900">Tasks</h1>
+        <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100">Tasks</h1>
         {tasks.length > 0 && (
-          <span className="rounded-full bg-gray-100 px-3 py-1 text-sm text-gray-600">
+          <span className="rounded-full bg-gray-100 px-3 py-1 text-sm text-gray-600 dark:bg-gray-700 dark:text-gray-300">
             {doneCount} of {tasks.length} done
           </span>
         )}
       </div>
       {error && (
-        <p className="mb-4 rounded bg-red-50 px-4 py-2 text-sm text-red-700">{error}</p>
+        <p className="mb-4 rounded bg-red-50 px-4 py-2 text-sm text-red-700 dark:bg-red-900/20 dark:text-red-400">{error}</p>
       )}
       {loading ? (
-        <p className="text-gray-500">Loading…</p>
+        <p className="text-gray-500 dark:text-gray-400">Loading…</p>
       ) : tasks.length === 0 ? (
-        <p className="text-gray-500">No tasks yet. Ask the agent to create a task for you.</p>
+        <p className="text-gray-500 dark:text-gray-400">No tasks yet. Ask the agent to create a task for you.</p>
       ) : (
         <ul className="space-y-3">
           {tasks.map((task) => (
             <li
               key={task.id}
               className={`flex items-start gap-3 rounded-lg border p-4 ${
-                task.done ? 'border-gray-100 bg-gray-50' : 'border-gray-200 bg-white shadow-sm'
+                task.done ? 'border-gray-100 bg-gray-50 dark:border-gray-700 dark:bg-gray-800/50' : 'border-gray-200 bg-white shadow-sm dark:border-gray-700 dark:bg-gray-800 dark:shadow-none'
               }`}
             >
               <input
                 type="checkbox"
                 checked={task.done}
                 onChange={() => void handleToggleDone(task.id)}
-                className="mt-1 h-4 w-4 cursor-pointer rounded border-gray-300 text-blue-600"
+                className="mt-1 h-4 w-4 cursor-pointer rounded border-gray-300 text-blue-600 dark:border-gray-600 dark:bg-gray-700"
               />
               <div className="flex-1 min-w-0">
                 {editingId === task.id ? (
                   <div className="flex gap-2">
                     <input
-                      className="flex-1 rounded border border-gray-300 px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      className="flex-1 rounded border border-gray-300 px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100"
                       value={editTitle}
                       onChange={(e) => setEditTitle(e.target.value)}
                     />
@@ -114,18 +114,18 @@ export default function TasksPage() {
                     </button>
                     <button
                       onClick={() => setEditingId(null)}
-                      className="rounded border px-2 py-1 text-xs text-gray-600"
+                      className="rounded border px-2 py-1 text-xs text-gray-600 dark:border-gray-600 dark:text-gray-400 dark:hover:bg-gray-700"
                     >
                       Cancel
                     </button>
                   </div>
                 ) : (
-                  <span className={`text-sm ${task.done ? 'text-gray-400 line-through' : 'text-gray-800'}`}>
+                  <span className={`text-sm ${task.done ? 'text-gray-400 dark:text-gray-500 line-through' : 'text-gray-800 dark:text-gray-200'}`}>
                     {task.title}
                   </span>
                 )}
                 {task.dueAt && (
-                  <p className="mt-1 text-xs text-gray-400">
+                  <p className="mt-1 text-xs text-gray-400 dark:text-gray-500">
                     Due: {new Date(task.dueAt).toLocaleDateString()}
                   </p>
                 )}
@@ -134,13 +134,13 @@ export default function TasksPage() {
                 <div className="flex gap-2 shrink-0">
                   <button
                     onClick={() => { setEditingId(task.id); setEditTitle(task.title); }}
-                    className="text-xs text-blue-600 hover:underline"
+                    className="text-xs text-blue-600 hover:underline dark:text-blue-400"
                   >
                     Edit
                   </button>
                   <button
                     onClick={() => void handleDelete(task.id)}
-                    className="text-xs text-red-600 hover:underline"
+                    className="text-xs text-red-600 hover:underline dark:text-red-400"
                   >
                     Delete
                   </button>

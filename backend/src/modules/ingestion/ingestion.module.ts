@@ -2,7 +2,6 @@ import { Module } from '@nestjs/common';
 import { MulterModule } from '@nestjs/platform-express';
 import { BullModule } from '@nestjs/bullmq'; // 💡 Use bullmq package
 import { ProvidersModule } from '../providers/providers.module';
-import { AuthGuard } from '../../common/guards/auth.guard';
 import { IngestionController } from './ingestion.controller';
 import { IngestionService } from './ingestion.service';
 import { ParserService } from './parsers/parser.service';
@@ -24,7 +23,6 @@ const QUEUE_NAME = process.env.QUEUE_INGESTION ?? 'ingestion';
   ],
   controllers: [IngestionController],
   providers: [
-    AuthGuard,
     IngestionService,
     ParserService,
     ChunkerService,

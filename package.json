@@ -18,6 +18,7 @@
     "onlyBuiltDependencies": [
       "@prisma/engines",
       "@scarf/scarf",
+      "argon2",
       "msgpackr-extract",
       "prisma",
       "sharp",

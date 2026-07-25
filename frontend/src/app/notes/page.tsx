@@ -56,22 +56,22 @@ export default function NotesPage() {
 
   return (
     <div className="mx-auto max-w-3xl px-4 py-8">
-      <h1 className="mb-6 text-2xl font-bold text-gray-900">Notes</h1>
+      <h1 className="mb-6 text-2xl font-bold text-gray-900 dark:text-gray-100">Notes</h1>
       {error && (
-        <p className="mb-4 rounded bg-red-50 px-4 py-2 text-sm text-red-700">{error}</p>
+        <p className="mb-4 rounded bg-red-50 px-4 py-2 text-sm text-red-700 dark:bg-red-900/20 dark:text-red-400">{error}</p>
       )}
       {loading ? (
-        <p className="text-gray-500">Loading…</p>
+        <p className="text-gray-500 dark:text-gray-400">Loading…</p>
       ) : notes.length === 0 ? (
-        <p className="text-gray-500">No notes yet. Ask the agent to save a note for you.</p>
+        <p className="text-gray-500 dark:text-gray-400">No notes yet. Ask the agent to save a note for you.</p>
       ) : (
         <ul className="space-y-4">
           {notes.map((note) => (
-            <li key={note.id} className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
+            <li key={note.id} className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-700 dark:bg-gray-800 dark:shadow-none">
               {editingId === note.id ? (
                 <div className="space-y-2">
                   <textarea
-                    className="w-full rounded border border-gray-300 p-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    className="w-full rounded border border-gray-300 p-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100"
                     rows={4}
                     value={editContent}
                     onChange={(e) => setEditContent(e.target.value)}
@@ -85,7 +85,7 @@ export default function NotesPage() {
                     </button>
                     <button
                       onClick={() => setEditingId(null)}
-                      className="rounded border border-gray-300 px-3 py-1 text-sm text-gray-700 hover:bg-gray-50"
+                      className="rounded border border-gray-300 px-3 py-1 text-sm text-gray-700 hover:bg-gray-50 dark:border-gray-600 dark:text-gray-300 dark:hover:bg-gray-700"
                     >
                       Cancel
                     </button>
@@ -93,21 +93,21 @@ export default function NotesPage() {
                 </div>
               ) : (
                 <>
-                  <p className="whitespace-pre-wrap text-sm text-gray-800">{note.content}</p>
+                  <p className="whitespace-pre-wrap text-sm text-gray-800 dark:text-gray-200">{note.content}</p>
                   <div className="mt-3 flex items-center justify-between">
-                    <span className="text-xs text-gray-400">
+                    <span className="text-xs text-gray-400 dark:text-gray-500">
                       {new Date(note.createdAt).toLocaleString()}
                     </span>
                     <div className="flex gap-2">
                       <button
                         onClick={() => { setEditingId(note.id); setEditContent(note.content); }}
-                        className="text-xs text-blue-600 hover:underline"
+                        className="text-xs text-blue-600 hover:underline dark:text-blue-400"
                       >
                         Edit
                       </button>
                       <button
                         onClick={() => void handleDelete(note.id)}
-                        className="text-xs text-red-600 hover:underline"
+                        className="text-xs text-red-600 hover:underline dark:text-red-400"
                       >
                         Delete
                       </button>

@@ -3,10 +3,10 @@ import { ConfigService } from '@nestjs/config';
 import { QueryController } from './query.controller';
 import { RetrievalService } from '../retrieval/retrieval.service';
 import { GENERATION_PROVIDER } from '../providers/generation.provider';
-import { AuthGuard } from '../../common/guards/auth.guard';
 import { REDIS_CLIENT } from '../../redis/redis.module';
 import { parseCitations } from './citation.util';
 import type { RetrievedChunk } from '../retrieval/retrieval.service';
+import type { JwtPayload } from '../../common/decorators/current-user.decorator';
 
 const mockRetrievalService = { retrieve: jest.fn() };
 const mockGenerationProvider = { generate: jest.fn() };
@@ -15,11 +15,10 @@ const mockRedis = {
   setex: jest.fn().mockResolvedValue('OK'),
 };
 
-class NoopAuthGuard {
-  canActivate() {
-    return true;
-  }
-}
+const TEST_USER: JwtPayload = {
+  sub: 'test-user-id',
+  email: 'test@example.com',
+};
 
 const makeChunk = (
   overrides: Partial<RetrievedChunk> = {},
@@ -46,10 +45,7 @@ describe('QueryController', () => {
         { provide: ConfigService, useValue: { get: jest.fn() } },
         { provide: REDIS_CLIENT, useValue: mockRedis },
       ],
-    })
-      .overrideGuard(AuthGuard)
-      .useClass(NoopAuthGuard)
-      .compile();
+    }).compile();
 
     controller = module.get(QueryController);
   });
@@ -63,7 +59,10 @@ describe('QueryController', () => {
         content: 'The answer is A',
       });
 
-      const result = await controller.query({ query: 'What is A?', topK: 3 });
+      const result = await controller.query(TEST_USER, {
+        query: 'What is A?',
+        topK: 3,
+      });
 
       expect(result.answer).toBe('The answer is A');
       expect(result.sources).toHaveLength(1);
@@ -78,7 +77,7 @@ describe('QueryController', () => {
         content: 'No context answer',
       });
 
-      await controller.query({ query: 'anything' });
+      await controller.query(TEST_USER, { query: 'anything' });
 
       expect(mockRetrievalService.retrieve).toHaveBeenCalledWith(
         'anything',
@@ -90,11 +89,23 @@ describe('QueryController', () => {
       mockRetrievalService.retrieve.mockResolvedValue([]);
       mockGenerationProvider.generate.mockResolvedValue({ content: 'ok' });
 
-      await controller.query({ query: 'test', topK: 10 });
+      await controller.query(TEST_USER, { query: 'test', topK: 10 });
 
       expect(mockRetrievalService.retrieve).toHaveBeenCalledWith(
         'test',
         expect.objectContaining({ topK: 10 }),
+      );
+    });
+
+    it('passes userId from JWT to retrieval', async () => {
+      mockRetrievalService.retrieve.mockResolvedValue([]);
+      mockGenerationProvider.generate.mockResolvedValue({ content: 'ok' });
+
+      await controller.query(TEST_USER, { query: 'test' });
+
+      expect(mockRetrievalService.retrieve).toHaveBeenCalledWith(
+        'test',
+        expect.objectContaining({ userId: 'test-user-id' }),
       );
     });
 
@@ -104,7 +115,7 @@ describe('QueryController', () => {
         content: 'I do not know',
       });
 
-      await controller.query({ query: 'obscure question' });
+      await controller.query(TEST_USER, { query: 'obscure question' });
 
       const generateCall = (
         mockGenerationProvider.generate.mock.calls[0] as unknown[]
@@ -119,7 +130,9 @@ describe('QueryController', () => {
       mockRetrievalService.retrieve.mockResolvedValue(chunks);
       mockGenerationProvider.generate.mockResolvedValue({ content: 'answer' });
 
-      await controller.query({ query: 'tell me about important fact' });
+      await controller.query(TEST_USER, {
+        query: 'tell me about important fact',
+      });
 
       const call = (
         mockGenerationProvider.generate.mock.calls[0] as unknown[]
@@ -136,7 +149,7 @@ describe('QueryController', () => {
       mockRetrievalService.retrieve.mockResolvedValue(chunks);
       mockGenerationProvider.generate.mockResolvedValue({ content: 'ok' });
 
-      const result = await controller.query({ query: 'q' });
+      const result = await controller.query(TEST_USER, { query: 'q' });
 
       expect(result.sources[0].content.length).toBe(200);
     });
@@ -159,7 +172,7 @@ describe('QueryController', () => {
         content: 'Based on [1] we know X. See also [2].',
       });
 
-      const result = await controller.query({ query: 'q' });
+      const result = await controller.query(TEST_USER, { query: 'q' });
 
       expect(result.citations).toHaveLength(2);
       expect(result.citations[0]).toMatchObject({
@@ -180,7 +193,7 @@ describe('QueryController', () => {
         content: 'Just an answer.',
       });
 
-      const result = await controller.query({ query: 'q' });
+      const result = await controller.query(TEST_USER, { query: 'q' });
       expect(result.citations).toEqual([]);
     });
   });
@@ -239,7 +252,7 @@ describe('QueryController', () => {
       mockRedis.get.mockResolvedValueOnce(JSON.stringify(cached));
       mockRetrievalService.retrieve.mockResolvedValue([]);
 
-      const result = await controller.query({ query: 'q' });
+      const result = await controller.query(TEST_USER, { query: 'q' });
 
       expect(result.answer).toBe('cached answer');
       expect(mockGenerationProvider.generate).not.toHaveBeenCalled();
@@ -252,7 +265,7 @@ describe('QueryController', () => {
         content: 'fresh answer',
       });
 
-      await controller.query({ query: 'q' });
+      await controller.query(TEST_USER, { query: 'q' });
 
       expect(mockRedis.setex).toHaveBeenCalledWith(
         expect.stringMatching(/^answer:/),

@@ -29,6 +29,14 @@ export class NotesService {
     return this.prisma.note.update({ where: { id }, data: { content } });
   }
 
+  async findRecent(userId: string, limit: number) {
+    return this.prisma.note.findMany({
+      where: { userId },
+      orderBy: { createdAt: 'desc' },
+      take: limit,
+    });
+  }
+
   async remove(userId: string, id: string) {
     await this.findOne(userId, id);
     await this.prisma.note.delete({ where: { id } });

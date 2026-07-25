@@ -16,8 +16,7 @@ import type { INestApplicationContext } from '@nestjs/common';
 import { AppModule } from '../../../app.module';
 import { PrismaService } from '../../../prisma/prisma.service';
 import { RetrievalService } from '../../retrieval/retrieval.service';
-import { DEV_USER_ID } from '../../../common/constants';
-
+const TEST_USER_ID = 'test-user-00000000-0000-0000-0000-000000000000';
 const VECTOR_DIM = 768;
 
 function makeVector(hotDim: number): number[] {
@@ -74,7 +73,7 @@ describe('Ingestion → Retrieval integration (requires Docker)', () => {
 
     const doc = await prisma.document.create({
       data: {
-        userId: DEV_USER_ID,
+        userId: TEST_USER_ID,
         title: 'Integration Test Document',
         contentHash,
         sourceType: 'txt',
@@ -103,7 +102,7 @@ describe('Ingestion → Retrieval integration (requires Docker)', () => {
 
     const retrieval = app.get(RetrievalService);
     const results = await retrieval.retrieve('ACID transactions PostgreSQL', {
-      userId: DEV_USER_ID,
+      userId: TEST_USER_ID,
       topK: 1,
     });
 

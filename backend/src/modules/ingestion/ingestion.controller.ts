@@ -7,7 +7,6 @@ import {
   Body,
   UploadedFile,
   UseInterceptors,
-  UseGuards,
   ParseFilePipe,
   MaxFileSizeValidator,
   FileTypeValidator,
@@ -21,16 +20,18 @@ import {
   ApiResponse,
   ApiTags,
 } from '@nestjs/swagger';
-import { AuthGuard } from '../../common/guards/auth.guard';
 import { IngestionService } from './ingestion.service';
 import { UploadDocumentDto } from './dto/upload-document.dto';
 import { DocumentResponseDto } from './dto/document-response.dto';
+import {
+  CurrentUser,
+  JwtPayload,
+} from '../../common/decorators/current-user.decorator';
 
 const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10 MB
 
 @ApiTags('documents')
 @Controller('v1/documents')
-@UseGuards(AuthGuard)
 export class IngestionController {
   constructor(private readonly ingestionService: IngestionService) {}
 
@@ -67,6 +68,7 @@ export class IngestionController {
   })
   @UseInterceptors(FileInterceptor('file'))
   async upload(
+    @CurrentUser() user: JwtPayload,
     @UploadedFile(
       new ParseFilePipe({
         validators: [
@@ -81,7 +83,7 @@ export class IngestionController {
     file: Express.Multer.File,
     @Body() dto: UploadDocumentDto,
   ) {
-    return this.ingestionService.uploadDocument(file, dto);
+    return this.ingestionService.uploadDocument(file, dto, user.sub);
   }
 
   @Get()
@@ -91,21 +93,21 @@ export class IngestionController {
     description: 'Array of active documents',
     type: [DocumentResponseDto],
   })
-  async list() {
-    return this.ingestionService.listDocuments();
+  async list(@CurrentUser() user: JwtPayload) {
+    return this.ingestionService.listDocuments(user.sub);
   }
 
   @Get(':id')
   @ApiOperation({ summary: 'Get a document by ID' })
-  async get(@Param('id') id: string) {
-    return this.ingestionService.getDocument(id);
+  async get(@CurrentUser() user: JwtPayload, @Param('id') id: string) {
+    return this.ingestionService.getDocument(id, user.sub);
   }
 
   @Delete(':id')
   @ApiOperation({ summary: 'Soft-delete a document' })
   @ApiResponse({ status: 204, description: 'Document soft-deleted' })
-  async delete(@Param('id') id: string) {
-    await this.ingestionService.deleteDocument(id);
+  async delete(@CurrentUser() user: JwtPayload, @Param('id') id: string) {
+    await this.ingestionService.deleteDocument(id, user.sub);
     return { message: 'Document deleted' };
   }
 }

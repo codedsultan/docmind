@@ -7,8 +7,6 @@ import {
   Param,
   Patch,
   Post,
-  Req,
-  UseGuards,
 } from '@nestjs/common';
 import {
   ApiBody,
@@ -18,9 +16,10 @@ import {
   ApiTags,
 } from '@nestjs/swagger';
 import { IsOptional, IsString, MaxLength, MinLength } from 'class-validator';
-import type { Request } from 'express';
-import { AuthGuard } from '../../common/guards/auth.guard';
-import { DEV_USER_ID } from '../../common/constants';
+import {
+  CurrentUser,
+  JwtPayload,
+} from '../../common/decorators/current-user.decorator';
 import { TasksService } from './tasks.service';
 
 export class CreateTaskDto {
@@ -74,21 +73,16 @@ export class UpdateTaskDto {
 
 @ApiTags('tasks')
 @Controller('v1/tasks')
-@UseGuards(AuthGuard)
 export class TasksController {
   constructor(private readonly tasksService: TasksService) {}
-
-  private userId(req: Request): string {
-    return (req as unknown as { userId?: string }).userId ?? DEV_USER_ID;
-  }
 
   @Post()
   @ApiOperation({ summary: 'Create a task' })
   @ApiBody({ type: CreateTaskDto })
   @ApiResponse({ status: 201 })
-  create(@Body() dto: CreateTaskDto, @Req() req: Request) {
+  create(@CurrentUser() user: JwtPayload, @Body() dto: CreateTaskDto) {
     return this.tasksService.create(
-      this.userId(req),
+      user.sub,
       dto.title,
       dto.description,
       dto.dueAt,
@@ -98,38 +92,38 @@ export class TasksController {
 
   @Get()
   @ApiOperation({ summary: 'List all tasks for the user' })
-  findAll(@Req() req: Request) {
-    return this.tasksService.findAll(this.userId(req));
+  findAll(@CurrentUser() user: JwtPayload) {
+    return this.tasksService.findAll(user.sub);
   }
 
   @Get(':id')
   @ApiOperation({ summary: 'Get a single task' })
-  findOne(@Param('id') id: string, @Req() req: Request) {
-    return this.tasksService.findOne(this.userId(req), id);
+  findOne(@CurrentUser() user: JwtPayload, @Param('id') id: string) {
+    return this.tasksService.findOne(user.sub, id);
   }
 
   @Patch(':id')
   @ApiOperation({ summary: 'Update a task' })
   @ApiBody({ type: UpdateTaskDto })
   update(
+    @CurrentUser() user: JwtPayload,
     @Param('id') id: string,
     @Body() dto: UpdateTaskDto,
-    @Req() req: Request,
   ) {
-    return this.tasksService.update(this.userId(req), id, dto);
+    return this.tasksService.update(user.sub, id, dto);
   }
 
   @Patch(':id/done')
   @ApiOperation({ summary: 'Toggle task done state' })
   @ApiResponse({ status: 200 })
-  toggleDone(@Param('id') id: string, @Req() req: Request) {
-    return this.tasksService.toggleDone(this.userId(req), id);
+  toggleDone(@CurrentUser() user: JwtPayload, @Param('id') id: string) {
+    return this.tasksService.toggleDone(user.sub, id);
   }
 
   @Delete(':id')
   @HttpCode(204)
   @ApiOperation({ summary: 'Delete a task' })
-  remove(@Param('id') id: string, @Req() req: Request) {
-    return this.tasksService.remove(this.userId(req), id);
+  remove(@CurrentUser() user: JwtPayload, @Param('id') id: string) {
+    return this.tasksService.remove(user.sub, id);
   }
 }

@@ -7,14 +7,16 @@ import {
   Post,
   Req,
   Sse,
-  UseGuards,
 } from '@nestjs/common';
 import { ApiBody, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { createHash } from 'crypto';
 import type Redis from 'ioredis';
 import { Observable, Subject } from 'rxjs';
 import type { Request } from 'express';
-import { AuthGuard } from '../../common/guards/auth.guard';
+import {
+  CurrentUser,
+  JwtPayload,
+} from '../../common/decorators/current-user.decorator';
 import { RetrievalService } from '../retrieval/retrieval.service';
 import {
   GENERATION_PROVIDER,
@@ -35,7 +37,6 @@ interface TypedPayload {
 }
 
 @ApiTags('chat')
-@UseGuards(AuthGuard)
 @Controller('v1/chat')
 export class QueryStreamController {
   private readonly logger = new Logger(QueryStreamController.name);
@@ -53,10 +54,14 @@ export class QueryStreamController {
   @Sse()
   @ApiOperation({ summary: 'Stream an answer token-by-token over SSE' })
   @ApiBody({ type: QueryDto })
-  stream(@Body() dto: QueryDto, @Req() req: Request): Observable<SseEvent> {
+  stream(
+    @CurrentUser() user: JwtPayload,
+    @Body() dto: QueryDto,
+    @Req() req: Request,
+  ): Observable<SseEvent> {
     const subject = new Subject<SseEvent>();
 
-    void this.handleStream(dto, req, subject);
+    void this.handleStream(dto, req, subject, user.sub);
 
     return subject.asObservable();
   }
@@ -71,6 +76,7 @@ export class QueryStreamController {
     dto: QueryDto,
     req: Request,
     subject: Subject<SseEvent>,
+    userId: string,
   ): Promise<void> {
     let aborted = false;
     req.on('close', () => {
@@ -79,7 +85,10 @@ export class QueryStreamController {
 
     try {
       const topK = dto.topK ?? 5;
-      const chunks = await this.retrievalService.retrieve(dto.query, { topK });
+      const chunks = await this.retrievalService.retrieve(dto.query, {
+        topK,
+        userId,
+      });
 
       if (aborted) {
         subject.complete();
@@ -156,9 +165,11 @@ export class QueryStreamController {
 
       this.emit(subject, { type: 'done', data: '' });
     } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : 'Stream error';
       this.logger.error('SSE stream error', err);
-      this.emit(subject, { type: 'error', data: message });
+      this.emit(subject, {
+        type: 'error',
+        data: 'An internal error occurred while processing your request.',
+      });
     } finally {
       subject.complete();
     }

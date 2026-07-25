@@ -8,9 +8,9 @@
  *          Fixture chunks are pre-computed and seeded automatically before cases run.
  *
  * Exit codes:
- *   0 — aggregate thresholds met (or DB unreachable — soft failure so CI does not
- *       block on infrastructure outages; the seed step also fails visibly if DB is down)
+ *   0 — aggregate thresholds met
  *   1 — hit@K or MRR below threshold, or fatal error
+ *   2 — EVAL_INFRA_FAILURE: database unreachable (CI job uses continue-on-error)
  */
 
 import 'reflect-metadata';
@@ -18,8 +18,9 @@ import { NestFactory } from '@nestjs/core';
 import type { INestApplicationContext } from '@nestjs/common';
 import { AppModule } from '../src/app.module';
 import { RetrievalService } from '../src/modules/retrieval/retrieval.service';
-import { DEV_USER_ID } from '../src/common/constants';
 import { seedEvalFixtures } from './seed';
+
+const EVAL_USER_ID = 'eval-user-00000000-0000-0000-0000-000000000000';
 import spec from './retrieval.json';
 
 interface EvalCase {
@@ -54,18 +55,21 @@ async function runEval(): Promise<void> {
 
   let app: INestApplicationContext | undefined;
   try {
+    // abortOnError: false prevents NestJS from calling process.exit(1) internally,
+    // letting us handle infra failures with exit code 2 for CI visibility.
     app = await NestFactory.createApplicationContext(AppModule, {
       logger: ['error', 'warn'],
+      abortOnError: false,
     });
   } catch (err) {
-    console.warn(
-      '\n[eval] SKIP — cannot start application context.\n' +
+    console.error(
+      '\n[eval] EVAL_INFRA_FAILURE — cannot reach database; exiting non-zero so CI does not silently report pass.\n' +
         '       Check DATABASE_URL and GEMINI_API_KEY are set, and that Postgres is reachable.\n' +
         '       Error: ' +
         (err instanceof Error ? err.message : String(err)) +
         '\n',
     );
-    process.exit(0);
+    process.exit(2);
   }
 
   // Seed the eval fixture (no-op if already present; does not call embedding API)
@@ -94,7 +98,7 @@ async function runEval(): Promise<void> {
     let chunks: { content: string }[] = [];
     try {
       chunks = await retrieval.retrieve(c.question, {
-        userId: DEV_USER_ID,
+        userId: EVAL_USER_ID,
         topK: TOP_K,
       });
     } catch (err) {

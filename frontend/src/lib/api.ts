@@ -1,8 +1,50 @@
 import type { DocumentResponse, UploadResult, QueryResponse } from '@/types/api';
 
+// Client-side token cache — populated from the httpOnly cookie via /api/auth/token
+let clientToken: string | null = null;
+
+/** Fetch the auth token from the httpOnly cookie for client-side use. */
+export async function initClientToken(): Promise<string | null> {
+  if (clientToken) return clientToken;
+  try {
+    const res = await fetch('/api/auth/token');
+    if (res.ok) {
+      const data = (await res.json()) as { token: string | null };
+      clientToken = data.token;
+      return clientToken;
+    }
+  } catch {
+    // swallow — caller handles missing token
+  }
+  return null;
+}
+
+/** Clear the client-side token cache (e.g. after logout). */
+export function clearClientToken(): void {
+  clientToken = null;
+}
+
+function getAuthToken(): string | null {
+  if (typeof window === 'undefined') {
+    try {
+      // dynamic require — works in server components / route handlers
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      const { cookies } = require('next/headers');
+      return cookies().get('auth_token')?.value ?? null;
+    } catch {
+      return null;
+    }
+  }
+
+  return clientToken;
+}
+
 function getAuthHeaders(): Record<string, string> {
-  const key = process.env.NEXT_PUBLIC_API_KEY;
-  return key ? { Authorization: `Bearer ${key}` } : {};
+  const token = getAuthToken();
+  if (token) {
+    return { Authorization: `Bearer ${token}` };
+  }
+  return {};
 }
 
 function getBaseUrl(): string {
@@ -10,10 +52,10 @@ function getBaseUrl(): string {
     return (
       process.env.API_BASE_URL_SERVER ??
       process.env.NEXT_PUBLIC_API_URL ??
-      'http://localhost:4000/api'
+      'http://localhost:4500/api'
     );
   }
-  return process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4000/api';
+  return process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4500/api';
 }
 
 export const API_BASE_URL = getBaseUrl();
@@ -33,6 +75,15 @@ export async function apiFetch<T>(
     },
     ...options,
   });
+
+  if (res.status === 401) {
+    if (typeof window !== 'undefined') {
+      // Clear the server-side cookie before redirecting to break the loop
+      await fetch('/api/auth/logout');
+      window.location.href = '/auth/login';
+    }
+    throw new Error('Unauthorized — redirecting to login');
+  }
 
   if (!res.ok) {
     throw new Error(`API error ${res.status} — ${url}`);
@@ -54,7 +105,11 @@ export async function uploadDocument(
   if (visibility) formData.append('visibility', visibility);
 
   const url = `${API_BASE_URL}/v1/documents/upload`;
-  const res = await fetch(url, { method: 'POST', headers: getAuthHeaders(), body: formData });
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: getAuthHeaders(),
+    body: formData,
+  });
 
   if (!res.ok) {
     throw new Error(`Upload error ${res.status} — ${url}`);
@@ -73,7 +128,10 @@ export async function getDocument(id: string): Promise<DocumentResponse> {
 
 export async function deleteDocument(id: string): Promise<void> {
   const url = `${API_BASE_URL}/v1/documents/${id}`;
-  const res = await fetch(url, { method: 'DELETE', headers: getAuthHeaders() });
+  const res = await fetch(url, {
+    method: 'DELETE',
+    headers: getAuthHeaders(),
+  });
 
   if (!res.ok) {
     throw new Error(`Delete error ${res.status} — ${url}`);

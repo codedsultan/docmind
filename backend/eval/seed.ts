@@ -12,8 +12,9 @@ import * as path from 'path';
 import { createHash } from 'crypto';
 import type { INestApplicationContext } from '@nestjs/common';
 import { PrismaService } from '../src/prisma/prisma.service';
-import { DEV_USER_ID } from '../src/common/constants';
 import { REDIS_CLIENT } from '../src/redis/redis.module';
+
+const EVAL_USER_ID = 'eval-user-00000000-0000-0000-0000-000000000000';
 import type Redis from 'ioredis';
 
 interface EmbeddedChunk {
@@ -58,7 +59,7 @@ export async function seedEvalFixtures(
     .digest('hex');
 
   const existing = await prisma.document.findFirst({
-    where: { userId: DEV_USER_ID, contentHash },
+    where: { userId: EVAL_USER_ID, contentHash },
     select: { id: true },
   });
 
@@ -69,7 +70,7 @@ export async function seedEvalFixtures(
   } else {
     const doc = await prisma.document.create({
       data: {
-        userId: DEV_USER_ID,
+        userId: EVAL_USER_ID,
         title: DOC_TITLE,
         contentHash,
         sourceType: SOURCE_TYPE as never,

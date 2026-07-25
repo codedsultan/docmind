@@ -277,6 +277,7 @@ at Phase 2 before the eval baseline is established.
 - **SP11 eval runner**: `backend/eval/run-eval.ts` bootstraps NestJS app context, runs hit@k + MRR per case, exits 1 on threshold failure. `backend/eval/retrieval.json` has 3 baseline cases (thresholds 0.0 — passes with empty DB). `pnpm eval` script added to `backend/package.json`. `ingestion.integration.spec.ts` skeleton added (`describe.skip`) for future testcontainers-based integration test.
 - **SP11 citation utility**: `parseCitations` and `buildAllCitations` extracted to `citation.util.ts`; `query.controller.ts` and `query-documents.tool.ts` updated to use shared util.
 - **SP12 email decision documented**: `CHANGELOG.md` updated — `send_email_digest` defers to `EmailLogService` (console preview); demonstrates risk-tier dispatch without live delivery. `send-email-digest.tool.spec.ts` added.
+  - _Follow-up (SP16-B, 2026-07-23)_: The `EmailLogService`-only entry above is now stale. `SEC-010-5` subsequently added `SmtpEmailService` (nodemailer) with an `EMAIL_MODE` factory — `EMAIL_MODE=log` keeps the log default, `EMAIL_MODE=send` uses real SMTP. `SP16-B` then completes the story by injecting `NotesService.findRecent` + `GenerationProvider` into `SendEmailDigestTool.execute`, replacing the `[Digest content would appear here]` placeholder with an AI-generated summary of the user's 10 most recent notes.
 - **SP13 cleanup + tests**: `query-documents.tool.spec.ts` added (riskTier, delegation, citations, snippet truncation). `tool-registry.service.ts` tested.
 - **Code review fixes**: unsafe `JSON.parse` in answer cache wrapped in try/catch + corrupt-key deletion; `pendingToolCall!` non-null assertion replaced with explicit runtime guard; `TurnCompleted` event now emitted on proposal path before early return; `eval/run-eval.ts` wraps retrieval loop in `try/finally` to guarantee `app.close()`.
 
@@ -351,3 +352,258 @@ All 7 security findings from the previous review session were fixed:
 **Status:** ✅ Completed
 **Tasks:** 37 done, 11 pending
 **Handover:** .ai/handover-20260722-224934-011.md
+
+---
+## Session 20260723-182332-004 — 2026-07-23 18:43
+**Branch:** ai/session-20260723-182332-004
+**Duration:** 20m 2s
+**Status:** ❌ Incomplete
+**Tasks:** 17 done, 0
+0 pending
+**Handover:** .ai/handover-20260723-182332-004.md (basic — Claude session unavailable)
+
+---
+## Session 20260723-204622-006 — 2026-07-23
+**Branch:** ai/session-20260723-204622-006
+**Commits:** `27a340b`, `9c2ba80`
+**Status:** ✅ F5.1 + F5.2 complete
+
+### What changed — Phase 5 Auth (F5.1 + F5.2)
+
+**F5.1 — JWT Auth Module**
+- `AuthModule` with `AuthService` (argon2 hash + verify), `AuthController` (`POST /v1/auth/register` → 201, `POST /v1/auth/login` → 200), `JwtStrategy` (passport-jwt), `JwtAuthGuard` as global `APP_GUARD`
+- `@Public()` decorator (`SetMetadata('isPublic', true)`) for unauthenticated routes; `@CurrentUser()` param decorator reads JWT payload from `request.user`
+- `JwtPayload` interface: `{ sub: string; email: string }`
+- Prisma migration `0010_add_user_auth`: renamed `User` → `users`, added `passwordHash TEXT NOT NULL`, dropped `name?` (applied via `prisma migrate deploy`)
+- argon2 native build: added `"argon2"` to `pnpm.onlyBuiltDependencies` at workspace root `package.json`
+- Config schema: `JWT_SECRET: Joi.string().min(32).required()`
+
+**F5.2 — Remove DEV_USER_ID, wire userId from JWT**
+- Deleted `DEV_USER_ID` from `backend/src/common/constants.ts`
+- All controllers (`ingestion`, `notes`, `tasks`, `trace`, `agent`, `query`, `query-stream`) now read `userId` from `@CurrentUser() user: JwtPayload` and pass `user.sub` to services
+- `IngestionService` + `RetrievalService` signatures changed from optional default to required `userId: string`; retrieval throws if called without userId
+- `eval/run-eval.ts` + `eval/seed.ts`: local `EVAL_USER_ID` constant (no longer imports from constants.ts)
+- `ingestion.integration.spec.ts`: local `TEST_USER_ID` constant
+- `auth-guard.e2e-spec.ts`: complete rewrite — registers real user, gets JWT, route-audit sweeps all `/v1/` routes for 401 without token, confirms public routes skip guard
+
+**Tests**
+- `auth.service.spec.ts`: register (hash check, ConflictException), login (token, UnauthorizedException wrong pw / unknown user, JWT payload shape)
+- `ownership.integration.spec.ts`: real Postgres via testcontainers, two users, notes/tasks/documents scoped to userA, asserts userB gets 404 on every cross-user access + list isolation
+
+### What's next
+- Run `pnpm test` + `pnpm test:integration` to confirm green (requires Docker for integration)
+- F5.3: Frontend auth — login/register pages, Next.js API route handlers (httpOnly cookie), `frontend/src/lib/api.ts` JWT cookie support, `frontend/src/middleware.ts` route protection, logout
+- F5.4: Deploy — EC2/VPS decision, GitHub secrets, `docker-compose.prod.yml`, CI deploy trigger
+- SP15 regression proof: push branch to CI to confirm integration-test job catches vector regression
+
+---
+## Session 20260723-204622-006 — 2026-07-23 21:12
+**Branch:** ai/session-20260723-204622-006
+**Duration:** 25m 32s
+**Status:** ✅ Completed
+**Tasks:** 4 done, 60 pending
+**Handover:** .ai/handover-20260723-204622-006.md
+
+---
+## Session 20260723-222437-007 — 2026-07-23 22:29
+**Branch:** ai/session-20260723-222437-007
+**Duration:** 4m 57s
+**Status:** ❌ Incomplete
+**Tasks:** 4 done, 60 pending
+**Handover:** .ai/handover-20260723-222437-007.md (basic — Claude session unavailable)
+
+---
+## Session 20260724-002100-001 — 2026-07-24 01:01
+**Branch:** ai/session-20260724-002100-001
+**Duration:** 37m 34s
+**Status:** ✅ Completed
+**Tasks:** 6 done, 35 pending
+**Handover:** .ai/handover-20260724-002100-001.md
+
+---
+## Session 20260724-011004-002 — 2026-07-24 05:27
+**Branch:** ai/session-20260724-011004-002
+**Duration:** 229m 38s
+**Status:** ✅ Completed
+**Tasks:** 6 done, 35 pending
+**Handover:** .ai/handover-20260724-011004-002.md
+
+---
+## Session 20260724-101650-003 — 2026-07-24 10:17
+**Branch:** ai/session-20260724-101650-003
+**Duration:** 0m 45s
+**Status:** ❌ Incomplete
+**Tasks:** 6 done, 35 pending
+**Handover:** .ai/handover-20260724-101650-003.md (basic — Claude session unavailable)
+
+---
+## Session 20260724-101923-004 — 2026-07-24 10:39
+**Branch:** ai/session-20260724-101923-004
+**Status:** ✅ Completed
+**Commit:** a7822dc
+
+### What changed
+- Deleted `backend/src/common/guards/auth.guard.ts` — old API-key guard, superseded by JwtAuthGuard; no remaining imports
+- Added `@Public()` to `AppController.notify` and `.queueStats` — both were returning 401 under the global JWT guard with no way to call them
+- Scoped `TraceService.findOne(id, userId)` + updated `TraceController.findOne` and `.export` — cross-user trace access via guessed IDs is now blocked; consistent with all other controllers
+
+### Confirmed already done (no code changes needed)
+- `@MaxLength(1024)` on both DTOs (login + register)
+- `@Throttle` rate limits on login/register endpoints
+- `JwtStrategy.validate()` queries DB to verify user still exists
+- JWT expiry set to `1d`
+- `.env.example` JWT_SECRET placeholder is 32 chars
+- All frontend auth pages, API route handlers, middleware, and LogoutButton
+
+### What's next
+- SP15 regression proof — manual CI run on a throwaway branch; cannot be automated
+- F5.4 deploy target — EC2 vs VPS2/Caddy decision required from the user before any deploy tasks proceed
+- F5.3 httpOnly cookie — current `httpOnly: false` is intentional for the direct-to-NestJS client architecture; changing to `true` requires routing all client API calls through Next.js proxy routes
+
+---
+## Session 20260724-101923-004 — F5.4 Deploy Target Decision
+
+**Branch:** ai/session-20260724-101923-004
+
+### Deploy Target: EC2 (confirmed)
+
+The deploy target is **EC2** via WireGuard VPN, as established by `.github/workflows/deploy.yml`.
+
+| Parameter | Value |
+|-----------|-------|
+| Compute | AWS EC2 instance |
+| Network access | WireGuard VPN (`wg0`), peer IP `10.10.0.1` |
+| SSH user | `${{ secrets.EC2_USER }}` |
+| App directory | `/opt/apps/${APP_ENV}` (e.g. `/opt/apps/production`) |
+| Container registry | GHCR (`ghcr.io`) — images pushed on `main` merge |
+| Deploy trigger | `workflow_dispatch` on `deploy.yml` (or called from `ci.yml`) |
+
+The deploy script SSHs into the EC2 instance via WireGuard, runs `./update-tags.sh` to point docker-compose at new image tags, then `docker compose pull && docker compose up -d`.
+
+### HTTPS Strategy: ⚠️ Pending User Decision
+
+HTTPS is **not yet configured** in the repository. Before triggering a production deploy, choose one of:
+
+**Option A — Caddy (recommended):** Add a `Caddyfile` to `/opt/apps/production/` on the EC2 instance. Caddy automatically provisions Let's Encrypt certificates on first request. No cert renewal cron required.
+
+```
+docmind.example.com {
+  reverse_proxy localhost:3400  # Next.js
+}
+api.docmind.example.com {
+  reverse_proxy localhost:4500  # NestJS
+}
+```
+
+**Option B — Certbot + nginx:** Install nginx on the EC2 host, run `certbot --nginx -d docmind.example.com`, set up auto-renewal with `certbot renew` cron.
+
+### What Still Needs User Input Before F5.4 Can Continue
+
+1. **Public hostname/IP** — not stored in the repo (inside the WireGuard `WG_CONFIG` secret). Confirm or update the public A record target.
+2. **HTTPS strategy** — Caddy or Certbot+nginx (see above).
+3. **GitHub secrets audit** — verify `DATABASE_URL`, `REDIS_HOST`, `REDIS_PORT`, `JWT_SECRET`, `GEMINI_API_KEY`, `GROQ_API_KEY`, `EMAIL_DIGEST_RECIPIENT`, `SMTP_*`, `EC2_SSH_KEY`, `EC2_USER`, and `WG_CONFIG` are all set in the repo's production environment.
+
+---
+## Session 20260724-101923-004 — 2026-07-24 10:50
+**Branch:** ai/session-20260724-101923-004
+**Duration:** 29m 46s
+**Status:** ✅ Completed
+**Tasks:** 11 done, 37 pending
+**Handover:** .ai/handover-20260724-101923-004.md
+
+---
+## Session 20260724-105435-005 — 2026-07-24 11:15
+**Branch:** ai/session-20260724-105435-005
+**Commit:** `84f215d`
+**Status:** ✅ Completed
+
+### What changed — SEC-20260723/20224 hardening + httpOnly cookie auth
+
+**Backend security hardening:**
+- Added `@Throttle({ ttl: 60000, limit: 10 })` on `agent/chat` and `@Throttle(20/min)` on `agent/confirm`
+- Added `CORS_ORIGIN` to Joi config validation schema; consumed via `ConfigService` instead of bare `process.env`
+- Added explicit CORS `methods` and `allowedHeaders` to `app.enableCors()`
+- Normalized email to lowercase in `AuthService.register()` and `.login()` — prevents case-sensitive duplicate accounts
+- Added `@MinLength(8) @MaxLength(128)` validation to `ConfirmDto.confirmationToken`
+- Created hand-written migration `0011_add_fk_constraints` — FK + ON DELETE CASCADE from `notes`, `tasks`, `tool_call_audits`, `query_traces` → `users`
+- Added `@relation` directives to Prisma schema for FK-backed tables; ran `prisma generate`
+- Fixed lint error in `auth.service.spec.ts` (type-safe mock extraction)
+
+**Frontend auth hardening (httpOnly cookies):**
+- Changed `httpOnly: false` → `httpOnly: true` on login/register route handler cookies
+- Created `/api/auth/token` route handler that reads the httpOnly cookie server-side
+- Added client-side token cache (`clientToken` module variable) in `api.ts`
+- `initClientToken()` called on mount in `Providers` — fetches token from `/api/auth/token`
+- `clearClientToken()` called on logout button
+- All frontend auth files committed: login/register pages, route handlers, middleware, LogoutButton
+
+**Items confirmed already done (no changes needed):**
+- JWT expiry `1d` (already in `auth.module.ts`)
+- `JwtStrategy` DB user existence check (already in `jwt.strategy.ts`)
+- Login/register `@Throttle(5/min)` (already in `auth.controller.ts`)
+- `.env.example` JWT_SECRET placeholder is 32 chars (already correct)
+- Old `AuthGuard` deleted, `AppController` routes have `@Public()`, `TraceController` filters by userId
+
+### Test results
+150 tests pass, 18 suites, 0 failed. Lint clean.
+
+### What's next (manual / pending user input)
+- SP15 regression proof — push throwaway branch to CI, confirm integration-test catches vector bug
+- Stream 401 error — manual confirmation with dev server running
+- F5.3 browser test — full loop (register → upload → chat → note → logout → redirect)
+- F5.4 deploy — user must confirm public hostname and HTTPS strategy (Caddy vs Certbot)
+- Documentation updates: `README.md` demo section, `docs/02-feature-breakdown.md` F5.1 done marker
+
+---
+## Session 20260724-105435-005 — 2026-07-24 11:11
+**Branch:** ai/session-20260724-105435-005
+**Duration:** 16m 30s
+**Status:** ✅ Completed
+**Tasks:** 35 done, 25 pending
+**Handover:** .ai/handover-20260724-105435-005.md
+
+---
+## Session 20260724-131206-006 — 2026-07-24 13:12
+**Branch:** ai/session-20260724-105435-005
+**Duration:** ~30m
+**Status:** ✅ Completed
+
+### What changed — SEC-20260724-2 frontend/streaming security + 6 SEV items closed
+
+**Fixed all 6 open SEC-20260724-2 findings:**
+
+1. **SSE error leakage** (`query-stream.controller.ts:167-169`) — `err.message` no longer emitted to client; logged server-side with generic "internal error" message.
+2. **Auth route error forwarding** (`login/route.ts`, `register/route.ts`) — backend error body logged server-side; client receives generic error message.
+3. **CSP headers** — configured on frontend (`next.config.ts` `headers()` with explicit script-src, style-src, connect-src, etc.) and backend (`helmet()` with explicit CSP directives, `crossOriginEmbedderPolicy: false`).
+4. **JWT blocklist on logout** — Redis-backed: `POST /v1/auth/logout` stores token `iat` as `blocklist:user:${sub}` (TTL 1d). `JwtStrategy.validate()` checks blocklist on every request. Frontend `logout/route.ts` reads `auth_token` cookie and sends as Bearer header to backend.
+5. **`LoginDto` `@MinLength(8)`** — added alongside existing `@MaxLength(1024)`.
+6. **`NEXT_PUBLIC_API_KEY` removed** from `frontend/.env.example` (no references remain).
+7. **SMTP `config.getOrThrow()`** — `SmtpEmailService` now uses `getOrThrow()` for `SMTP_USER`/`SMTP_PASS` (EmailModule factory already guards before instantiation).
+
+**Types added:**
+- `JwtPayload.iat` — added `iat?: number` to shared interface for blocklist comparison.
+
+**Fixed test:**
+- `auth.service.spec.ts` — added `REDIS_CLIENT` mock (mockRedis with `setex`, `get`).
+
+**Documentation updated:**
+- `README.md` — "Auth — TODO" replaced with implementation summary; feature walkthrough step 0 (register/login) added.
+- `docs/02-feature-breakdown.md` — F5.1 tasks marked done with audit reference.
+- `TASKS.md` — all SEC-20260724-2 items marked done; SP13 cleanup cited and closed.
+
+### Test results
+150 tests pass, 18 suites, 0 failed. Frontend type-check clean.
+
+### Still pending (manual / user input)
+- SP15 regression proof — requires manual branch push + CI run
+- Stream 401 confirmation — requires dev server restart
+- F5.3 browser test — requires Docker + dev server
+- F5.4 deploy — user must confirm public hostname + HTTPS strategy (Caddy vs Certbot)
+
+---
+## Session 20260724-130656-006 — 2026-07-24 13:20
+**Branch:** ai/session-20260724-130656-006
+**Duration:** 13m 17s
+**Status:** ✅ Completed
+**Tasks:** 54 done, 15 pending
+**Handover:** .ai/handover-20260724-130656-006.md
