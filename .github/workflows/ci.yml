@@ -216,6 +216,7 @@ jobs:
       REDIS_PORT: "6379"
       GEMINI_API_KEY: placeholder
       INTERNAL_API_KEY: placeholder
+      JWT_SECRET: ci-eval-retrieval-jwt-secret-min32bytes!
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
