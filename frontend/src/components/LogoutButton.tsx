@@ -21,6 +21,7 @@ export function LogoutButton() {
     try {
       await fetch('/api/auth/logout');
       clearClientToken();
+      setLoading(false);
       router.push('/auth/login');
       router.refresh();
     } catch {
