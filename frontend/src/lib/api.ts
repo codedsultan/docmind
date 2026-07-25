@@ -2,26 +2,47 @@ import type { DocumentResponse, UploadResult, QueryResponse } from '@/types/api'
 
 // Client-side token cache — populated from the httpOnly cookie via /api/auth/token
 let clientToken: string | null = null;
+let initPromise: Promise<string | null> | null = null;
 
 /** Fetch the auth token from the httpOnly cookie for client-side use. */
 export async function initClientToken(): Promise<string | null> {
   if (clientToken) return clientToken;
-  try {
-    const res = await fetch('/api/auth/token');
-    if (res.ok) {
-      const data = (await res.json()) as { token: string | null };
-      clientToken = data.token;
-      return clientToken;
-    }
-  } catch {
-    // swallow — caller handles missing token
+  if (!initPromise) {
+    initPromise = fetch('/api/auth/token')
+      .then(async (res) => {
+        if (res.ok) {
+          const data = (await res.json()) as { token: string | null };
+          clientToken = data.token;
+          return clientToken;
+        }
+        return null;
+      })
+      .catch(() => null);
   }
-  return null;
+  return initPromise;
+}
+
+// Eagerly start token init at module load time (browser only).
+// The module loads before React starts rendering, so by the time
+// useQuery fires listDocuments() during render, initPromise is
+// already set and getAuthToken() will await it.
+if (typeof window !== 'undefined' && !initPromise && !clientToken) {
+  initPromise = fetch('/api/auth/token')
+    .then(async (res) => {
+      if (res.ok) {
+        const data = (await res.json()) as { token: string | null };
+        clientToken = data.token;
+        return clientToken;
+      }
+      return null;
+    })
+    .catch(() => null);
 }
 
 /** Clear the client-side token cache (e.g. after logout). */
 export function clearClientToken(): void {
   clientToken = null;
+  initPromise = null;
 }
 
 async function getAuthToken(): Promise<string | null> {
@@ -35,6 +56,13 @@ async function getAuthToken(): Promise<string | null> {
     } catch {
       return null;
     }
+  }
+
+  // If init is already in progress (e.g. providers fired first render and
+  // kicked off initClientToken via useEffect), await the shared promise so
+  // getAuthToken returns the resolved value rather than null.
+  if (initPromise) {
+    return initPromise;
   }
 
   return clientToken;

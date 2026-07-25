@@ -1,11 +1,9 @@
 'use client';
 
 import { FormEvent, useState } from 'react';
-import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 
 export default function LoginPage() {
-  const router = useRouter();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
@@ -28,7 +26,10 @@ export default function LoginPage() {
         throw new Error(data.error ?? 'Login failed');
       }
 
-      router.push('/documents');
+      // Full page navigation ensures the auth_token cookie is sent with
+      // the next request. router.push() does a client-side transition
+      // that can lose the cookie on some navigation paths.
+      window.location.href = '/documents';
     } catch (err) {
       setError(err instanceof Error ? err.message : 'An error occurred');
     } finally {
