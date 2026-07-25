@@ -45,12 +45,12 @@ function makeVector(hotDim: number): number[] {
 const stubEmbeddingProvider: EmbeddingProvider = {
   model: 'test-stub',
   dimensions: VECTOR_DIM,
-  async embed(opts) {
-    return {
+  embed(opts) {
+    return Promise.resolve({
       embeddings: opts.texts.map(() => makeVector(42)),
       model: 'test-stub',
       dimensions: VECTOR_DIM,
-    };
+    });
   },
 };
 
