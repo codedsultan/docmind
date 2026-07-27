@@ -4,6 +4,29 @@ All notable changes to DocMind are logged here, phase by phase. This is the publ
 
 Format loosely follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## Agent Citations + Multi-Turn Conversations — 2026-07-26
+
+### Added
+
+#### Multi-Turn Agent Conversations
+- **`Conversation` + `Message` Prisma models** — new `MessageRole` enum (`user`/`assistant`); `Message.citations` stores citation data for assistant turns produced via the short-circuit path below.
+- **`ConversationsModule`** (`ConversationsService`, `ConversationsController`) — `GET /v1/conversations` (list current user's conversations), `GET /v1/conversations/:id/messages` (full history), ownership-checked via `assertOwnership()`.
+- **`trimHistory()` util** — hybrid history-window strategy: hard ceiling of the last 20 messages, then a further ~3000-token budget trim within that window, always preserving at least the most recent turn even if it alone exceeds the budget.
+- **`AgentChatDto.conversationId`** (optional) — omit to start a new conversation; the new id is returned via a `conversation_started` SSE event before the answer stream begins.
+- **`AgentService.run()`** now loads and seeds trimmed prior history into the graph's initial `messages` state, and persists the user query immediately plus the final assistant answer once produced. Nothing is persisted for turns that pause on an `external_write` confirmation (no final answer yet).
+- Scope: multi-turn ships on `/v1/agent/chat` only; `/v1/chat/stream` remains single-turn.
+
+#### Agent Citations
+- **Citation short-circuit** — when a dispatched tool (`query_documents`) returns `{answer, citations}`, `AgentService` now emits a `citations` SSE event and streams that answer directly instead of routing back through `modelTurn` for re-synthesis. This guarantees `[N]` markers in the answer text stay aligned with the emitted citation array, and closes a previously dead `citations` event type in `agent-sse.types.ts` that the frontend already knew how to render.
+
+#### Frontend
+- **`useChatStream`** rewritten around a `messages: ChatMessage[]` thread and a `conversationId` ref, replacing the old single-answer `content`/`citations` state.
+- **`/chat` page** rewritten as a scrollable message thread (`MessageBubble` per turn) with a "New conversation" control (`startNewConversation()`), instead of rendering only the latest Q&A pair.
+
+### Tests
+- `agent.service.spec.ts` — citation short-circuit (single `generate()` call, correct citation payload), history seeding into the first `generate()` call, message persistence across the cited-answer/normal/proposal-pause paths.
+- `history.util.spec.ts` — hard-ceiling cap, token-budget trim, and the always-keep-latest-turn safeguard.
+
 ## JWT Auth — 2026-07-24
 
 ### Added
