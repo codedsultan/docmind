@@ -11,7 +11,17 @@ export interface ToolProposal {
   confirmationToken: string;
 }
 
+export interface ChatMessage {
+  id: string;
+  role: 'user' | 'assistant';
+  content: string;
+  citations: Citation[];
+  /** True while this assistant message's tokens are still streaming in. */
+  streaming?: boolean;
+}
+
 type StreamEvent =
+  | { type: 'conversation_started'; data: { conversationId: string } }
   | { type: 'citations'; data: Citation[] }
   | { type: 'token'; data: string }
   | { type: 'done'; data: string }
@@ -21,29 +31,36 @@ type StreamEvent =
   | { type: 'confirmation_required'; data: ToolProposal };
 
 interface ChatStreamState {
-  content: string;
-  citations: Citation[];
+  conversationId: string | null;
+  messages: ChatMessage[];
   loading: boolean;
   error: string | null;
   pendingConfirmation: ToolProposal | null;
 }
 
 interface UseChatStreamReturn extends ChatStreamState {
-  ask: (query: string, topK?: number) => void;
+  ask: (query: string) => void;
   abort: () => void;
   clearConfirmation: () => void;
+  /** Starts a brand-new conversation on the next ask() instead of continuing the current one. */
+  startNewConversation: () => void;
+}
+
+function makeId(): string {
+  return `${Date.now()}-${Math.random().toString(36).slice(2)}`;
 }
 
 export function useChatStream(): UseChatStreamReturn {
   const [state, setState] = useState<ChatStreamState>({
-    content: '',
-    citations: [],
+    conversationId: null,
+    messages: [],
     loading: false,
     error: null,
     pendingConfirmation: null,
   });
 
   const abortRef = useRef<AbortController | null>(null);
+  const conversationIdRef = useRef<string | null>(null);
 
   const abort = useCallback(() => {
     abortRef.current?.abort();
@@ -55,20 +72,64 @@ export function useChatStream(): UseChatStreamReturn {
     setState((prev) => ({ ...prev, pendingConfirmation: null }));
   }, []);
 
-  const ask = useCallback((query: string, topK?: number) => {
+  const startNewConversation = useCallback(() => {
+    conversationIdRef.current = null;
+    setState({
+      conversationId: null,
+      messages: [],
+      loading: false,
+      error: null,
+      pendingConfirmation: null,
+    });
+  }, []);
+
+  const ask = useCallback((query: string) => {
     // Cancel any in-flight request
     abortRef.current?.abort();
     const controller = new AbortController();
     abortRef.current = controller;
 
-    setState({ content: '', citations: [], loading: true, error: null, pendingConfirmation: null });
+    const userMessage: ChatMessage = {
+      id: makeId(),
+      role: 'user',
+      content: query,
+      citations: [],
+    };
+    const assistantId = makeId();
+    const assistantMessage: ChatMessage = {
+      id: assistantId,
+      role: 'assistant',
+      content: '',
+      citations: [],
+      streaming: true,
+    };
+
+    setState((prev) => ({
+      ...prev,
+      messages: [...prev.messages, userMessage, assistantMessage],
+      loading: true,
+      error: null,
+      pendingConfirmation: null,
+    }));
+
+    const updateAssistant = (patch: Partial<ChatMessage>) => {
+      setState((prev) => ({
+        ...prev,
+        messages: prev.messages.map((m) =>
+          m.id === assistantId ? { ...m, ...patch } : m,
+        ),
+      }));
+    };
 
     void (async () => {
       try {
         const res = await fetch(`${API_BASE_URL}/v1/agent/chat`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', ...(await getAuthHeaders()) },
-          body: JSON.stringify({ query, topK }),
+          body: JSON.stringify({
+            query,
+            conversationId: conversationIdRef.current ?? undefined,
+          }),
           signal: controller.signal,
         });
 
@@ -100,19 +161,35 @@ export function useChatStream(): UseChatStreamReturn {
               continue;
             }
 
-            if (event.type === 'citations') {
-              setState((prev) => ({ ...prev, citations: event.data as Citation[] }));
+            if (event.type === 'conversation_started') {
+              conversationIdRef.current = event.data.conversationId;
+              setState((prev) => ({
+                ...prev,
+                conversationId: event.data.conversationId,
+              }));
+            } else if (event.type === 'citations') {
+              updateAssistant({ citations: event.data as Citation[] });
             } else if (event.type === 'token') {
-              setState((prev) => ({ ...prev, content: prev.content + (event.data as string) }));
+              setState((prev) => ({
+                ...prev,
+                messages: prev.messages.map((m) =>
+                  m.id === assistantId
+                    ? { ...m, content: m.content + (event.data as string) }
+                    : m,
+                ),
+              }));
             } else if (event.type === 'done') {
+              updateAssistant({ streaming: false });
               setState((prev) => ({ ...prev, loading: false }));
             } else if (event.type === 'error') {
+              updateAssistant({ streaming: false });
               setState((prev) => ({
                 ...prev,
                 error: event.data as string,
                 loading: false,
               }));
             } else if (event.type === 'confirmation_required') {
+              updateAssistant({ streaming: false });
               setState((prev) => ({
                 ...prev,
                 loading: false,
@@ -123,6 +200,7 @@ export function useChatStream(): UseChatStreamReturn {
         }
       } catch (err: unknown) {
         if (err instanceof Error && err.name === 'AbortError') return;
+        updateAssistant({ streaming: false });
         setState((prev) => ({
           ...prev,
           error: err instanceof Error ? err.message : 'Stream failed',
@@ -132,5 +210,5 @@ export function useChatStream(): UseChatStreamReturn {
     })();
   }, []);
 
-  return { ...state, ask, abort, clearConfirmation };
+  return { ...state, ask, abort, clearConfirmation, startNewConversation };
 }

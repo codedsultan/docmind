@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { useChatStream } from '@/hooks/useChatStream';
+import { useChatStream, type ChatMessage } from '@/hooks/useChatStream';
 import { ConfirmationCard } from '@/components/ConfirmationCard';
 import type { Citation } from '@/types/api';
 
@@ -59,31 +59,129 @@ function AnswerWithCitations({
   );
 }
 
+function MessageBubble({ message }: { message: ChatMessage }) {
+  const isUser = message.role === 'user';
+
+  return (
+    <div className={`flex ${isUser ? 'justify-end' : 'justify-start'}`}>
+      <div
+        className={
+          isUser
+            ? 'max-w-[80%] rounded-lg bg-blue-600 px-4 py-2 text-sm text-white'
+            : 'max-w-[80%] rounded-lg border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-800/50'
+        }
+      >
+        {isUser ? (
+          <p className="whitespace-pre-wrap">{message.content}</p>
+        ) : (
+          <>
+            {message.content.length > 0 ? (
+              <AnswerWithCitations content={message.content} citations={message.citations} />
+            ) : message.streaming ? (
+              <span className="inline-block h-4 w-0.5 animate-pulse bg-gray-400 dark:bg-gray-500" />
+            ) : null}
+            {message.streaming && message.content.length > 0 && (
+              <span className="mt-1 inline-block h-4 w-0.5 animate-pulse bg-gray-400 dark:bg-gray-500" />
+            )}
+
+            {message.citations.length > 0 && (
+              <div className="mt-3">
+                <h2 className="mb-2 text-xs font-semibold text-gray-500 dark:text-gray-400">
+                  Sources ({message.citations.length})
+                </h2>
+                <div className="space-y-2">
+                  {message.citations.map((citation) => (
+                    <details
+                      key={citation.chunkId}
+                      className="rounded-lg border border-gray-200 dark:border-gray-700"
+                    >
+                      <summary className="cursor-pointer px-3 py-2 text-xs font-medium text-gray-700 hover:bg-gray-50 dark:text-gray-300 dark:hover:bg-gray-700/50">
+                        {citation.marker} &middot; {citation.documentTitle}
+                      </summary>
+                      <div className="border-t border-gray-100 px-3 py-2 text-xs text-gray-500 dark:border-gray-700 dark:text-gray-400">
+                        {citation.snippet}
+                      </div>
+                    </details>
+                  ))}
+                </div>
+              </div>
+            )}
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export default function ChatPage() {
   const [query, setQuery] = useState('');
   const {
-    content,
-    citations,
+    messages,
     loading,
     error,
     pendingConfirmation,
     ask,
     abort,
     clearConfirmation,
+    startNewConversation,
   } = useChatStream();
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!query.trim()) return;
     ask(query.trim());
+    setQuery('');
   };
 
-  const hasAnswer = content.length > 0;
-
   return (
-    <div className="mx-auto max-w-3xl space-y-6 p-6">
-      <h1 className="text-2xl font-bold">Chat</h1>
-      <p className="text-sm text-gray-500 dark:text-gray-400">Ask questions about your ingested documents.</p>
+    <div className="mx-auto flex max-w-3xl flex-col space-y-6 p-6">
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-2xl font-bold">Chat</h1>
+          <p className="text-sm text-gray-500 dark:text-gray-400">
+            Ask questions about your ingested documents. Follow-up questions keep the conversation&apos;s context.
+          </p>
+        </div>
+        {messages.length > 0 && (
+          <button
+            type="button"
+            onClick={startNewConversation}
+            className="rounded-lg border border-gray-300 px-3 py-1.5 text-xs font-medium text-gray-600 hover:bg-gray-50 dark:border-gray-600 dark:text-gray-300 dark:hover:bg-gray-800"
+          >
+            New conversation
+          </button>
+        )}
+      </div>
+
+      <div className="space-y-4">
+        {messages.map((message) => (
+          <MessageBubble key={message.id} message={message} />
+        ))}
+
+        {messages.length === 0 && !loading && !error && (
+          <div className="rounded-lg border border-yellow-200 bg-yellow-50 p-4 text-sm text-yellow-700 dark:border-yellow-800 dark:bg-yellow-900/20 dark:text-yellow-400">
+            No messages yet. Ask a question below.
+          </div>
+        )}
+      </div>
+
+      {error && (
+        <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700 dark:border-red-800 dark:bg-red-900/20 dark:text-red-400">
+          {error}
+        </div>
+      )}
+
+      {pendingConfirmation && (
+        <ConfirmationCard
+          proposal={pendingConfirmation}
+          onConfirmed={() => {
+            // After confirmation, the tool executes server-side.
+            // The SSE stream has ended, so we just clean up.
+            clearConfirmation();
+          }}
+          onCancel={clearConfirmation}
+        />
+      )}
 
       <form onSubmit={handleSubmit} className="flex gap-2">
         <input
@@ -112,64 +210,6 @@ export default function ChatPage() {
           </button>
         )}
       </form>
-
-      {error && (
-        <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700 dark:border-red-800 dark:bg-red-900/20 dark:text-red-400">
-          {error}
-        </div>
-      )}
-
-      {pendingConfirmation && (
-        <ConfirmationCard
-          proposal={pendingConfirmation}
-          onConfirmed={() => {
-            // After confirmation, the tool executes server-side.
-            // The SSE stream has ended, so we just clean up.
-            clearConfirmation();
-          }}
-          onCancel={clearConfirmation}
-        />
-      )}
-
-      {hasAnswer && (
-        <div className="space-y-4">
-          <div className="rounded-lg border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-800/50">
-            <AnswerWithCitations content={content} citations={citations} />
-            {loading && (
-              <span className="mt-1 inline-block h-4 w-0.5 animate-pulse bg-gray-400 dark:bg-gray-500" />
-            )}
-          </div>
-
-          {citations.length > 0 && (
-            <div>
-              <h2 className="mb-2 text-sm font-semibold text-gray-700 dark:text-gray-300">
-                Sources ({citations.length})
-              </h2>
-              <div className="space-y-2">
-                {citations.map((citation) => (
-                  <details
-                    key={citation.chunkId}
-                    className="rounded-lg border border-gray-200 dark:border-gray-700"
-                  >
-                    <summary className="cursor-pointer px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 dark:text-gray-300 dark:hover:bg-gray-700/50">
-                      {citation.marker} &middot; {citation.documentTitle}
-                    </summary>
-                    <div className="border-t border-gray-100 px-3 py-2 text-xs text-gray-500 dark:border-gray-700 dark:text-gray-400">
-                      {citation.snippet}
-                    </div>
-                  </details>
-                ))}
-              </div>
-            </div>
-          )}
-        </div>
-      )}
-
-      {!hasAnswer && !loading && !error && (
-        <div className="rounded-lg border border-yellow-200 bg-yellow-50 p-4 text-sm text-yellow-700 dark:border-yellow-800 dark:bg-yellow-900/20 dark:text-yellow-400">
-          No answer yet. Ask a question above.
-        </div>
-      )}
     </div>
   );
 }

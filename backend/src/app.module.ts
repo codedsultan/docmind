@@ -14,6 +14,7 @@ import { RetrievalModule } from './modules/retrieval/retrieval.module';
 import { QueryModule } from './modules/query/query.module';
 import { ToolsModule } from './modules/tools/tools.module';
 import { AgentModule } from './modules/agent/agent.module';
+import { ConversationsModule } from './modules/conversations/conversations.module';
 import { NotesModule } from './modules/notes/notes.module';
 import { TasksModule } from './modules/tasks/tasks.module';
 import { TraceModule } from './modules/trace/trace.module';
@@ -55,6 +56,7 @@ const configValidationSchema = Joi.object({
     QueryModule,
     ToolsModule,
     AgentModule,
+    ConversationsModule,
     NotesModule,
     TasksModule,
     TraceModule,

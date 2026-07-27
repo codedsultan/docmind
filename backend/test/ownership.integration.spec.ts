@@ -16,7 +16,8 @@
 // is imported below), so these must be set BEFORE the import to pass
 // ConfigModule validation. Actual values (testcontainer port, etc.) are
 // overwritten in beforeAll.
-process.env['DATABASE_URL'] = 'postgresql://placeholder:placeholder@localhost:9999/placeholder';
+process.env['DATABASE_URL'] =
+  'postgresql://placeholder:placeholder@localhost:9999/placeholder';
 process.env['REDIS_HOST'] = 'localhost';
 process.env['REDIS_PORT'] = '6399';
 process.env['REDIS_URL'] = 'redis://localhost:6399';

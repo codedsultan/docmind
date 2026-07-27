@@ -1,6 +1,7 @@
 import type { ToolProposal } from '../tools/tool-proposal.type';
 
 export type AgentSseEvent =
+  | { type: 'conversation_started'; data: { conversationId: string } }
   | { type: 'token'; data: string }
   | { type: 'citations'; data: unknown[] }
   | { type: 'done'; data: string }
