@@ -1,4 +1,5 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
+import { Prisma } from '../../../generated/prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import type { ChatMessage } from '../providers/generation.provider';
 import { trimHistory } from './history.util';
@@ -56,7 +57,10 @@ export class ConversationsService {
     return trimHistory(messages);
   }
 
-  async appendUserMessage(conversationId: string, content: string): Promise<void> {
+  async appendUserMessage(
+    conversationId: string,
+    content: string,
+  ): Promise<void> {
     await this.appendMessage(conversationId, 'user', content);
   }
 
@@ -80,7 +84,9 @@ export class ConversationsService {
           conversationId,
           role,
           content,
-          citations: citations ?? undefined,
+          citations: citations
+            ? (citations as Prisma.InputJsonValue)
+            : undefined,
         },
       }),
       // Bump updatedAt so conversations sort by recent activity (used by

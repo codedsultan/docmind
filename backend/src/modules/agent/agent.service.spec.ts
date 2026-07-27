@@ -13,10 +13,15 @@ function makeProvider(responses: string[]) {
   let callCount = 0;
   return {
     model: 'mock-model',
-    generate: jest.fn((): Promise<{ content: string }> =>
-      Promise.resolve({
-        content: responses[Math.min(callCount++, responses.length - 1)],
-      }),
+    generate: jest.fn(
+      (_options: { messages: unknown[]; systemPrompt: string }): Promise<{
+        content: string;
+      }> => {
+        void _options; // kept only so Parameters<> isn't inferred as [] — see mock.calls[0][0] usage below
+        return Promise.resolve({
+          content: responses[Math.min(callCount++, responses.length - 1)],
+        });
+      },
     ),
     generateStream: jest.fn(),
   };

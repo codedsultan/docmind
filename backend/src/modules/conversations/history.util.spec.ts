@@ -53,9 +53,7 @@ describe('trimHistory', () => {
   });
 
   it('applies the hard ceiling before the token budget pass', () => {
-    const messages = Array.from({ length: 25 }, (_, i) =>
-      msg('user', `m${i}`),
-    );
+    const messages = Array.from({ length: 25 }, (_, i) => msg('user', `m${i}`));
     const result = trimHistory(messages, {
       maxMessages: 5,
       tokenBudget: 1_000_000, // budget effectively irrelevant here
