@@ -9,6 +9,7 @@ import {
 } from '../providers/generation.provider';
 import { ToolRegistryService } from '../tools/tool-registry.service';
 import { isToolProposal, ToolProposal } from '../tools/tool-proposal.type';
+import { ConversationsService } from '../conversations/conversations.service';
 import type { AgentSseEvent } from './agent-sse.types';
 
 const SYSTEM_PROMPT = `You are DocMind, an AI assistant that can use tools to help users explore their documents.
@@ -37,6 +38,14 @@ const AgentState = Annotation.Root({
     error?: string;
   } | null>(),
   proposal: Annotation<ToolProposal | null>(),
+  // Set when a tool result already contains a final answer + citations
+  // (e.g. query_documents). Short-circuits the loop instead of routing
+  // back through modelTurn, so the [N] markers in `answer` stay aligned
+  // with the `citations` array we emit alongside it.
+  finalAnswerOverride: Annotation<CitedAnswer | null>({
+    value: (_: CitedAnswer | null, b: CitedAnswer | null) => b,
+    default: () => null,
+  }),
   iterationCount: Annotation<number>({
     value: (_: number, b: number) => b,
     default: () => 0,
@@ -49,6 +58,21 @@ interface ParsedAction {
   toolCall: { name: string; params: unknown } | null;
 }
 
+/** Shape returned by citation-bearing tools (e.g. query_documents). */
+interface CitedAnswer {
+  answer: string;
+  citations: unknown[];
+}
+
+function isCitedAnswer(value: unknown): value is CitedAnswer {
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    typeof (value as Record<string, unknown>).answer === 'string' &&
+    Array.isArray((value as Record<string, unknown>).citations)
+  );
+}
+
 @Injectable()
 export class AgentService {
   private readonly logger = new Logger(AgentService.name);
@@ -59,6 +83,7 @@ export class AgentService {
     @Inject(GENERATION_PROVIDER) private readonly provider: GenerationProvider,
     private readonly config: ConfigService,
     private readonly eventEmitter: EventEmitter2,
+    private readonly conversations: ConversationsService,
   ) {
     this.maxIterations = this.config.get<number>('AGENT_MAX_ITERATIONS') ?? 10;
   }
@@ -72,13 +97,26 @@ export class AgentService {
    * the dispatched tool is `external_write`; the stream consumer emits
    * `confirmation_required` and stops. Resume happens via POST /agent/confirm
    * which calls ToolRegistryService.executeConfirmed() independently.
+   *
+   * Multi-turn: prior messages for `conversationId` are loaded (trimmed via
+   * ConversationsService/history.util) and seeded into the graph's initial
+   * `messages` state ahead of the new query. The user's query is persisted
+   * immediately; the final assistant answer is persisted once produced —
+   * either via the normal final-answer path or the citation short-circuit
+   * below. Tool-call/tool-result scaffolding is never persisted (see
+   * ConversationsService for rationale), and nothing is persisted if the
+   * turn pauses on an external_write confirmation (no final answer yet).
    */
   async run(
     query: string,
     userId: string,
+    conversationId: string,
     emit: (event: AgentSseEvent) => void,
     queryId?: string,
   ): Promise<void> {
+    const history = await this.conversations.loadHistory(conversationId);
+    await this.conversations.appendUserMessage(conversationId, query);
+
     const toolList = this.toolRegistry
       .listTools()
       .map((t) => `- ${t.name}: ${t.description}`)
@@ -142,6 +180,18 @@ export class AgentService {
         };
       }
 
+      // Citation-bearing tool result: short-circuit to a final answer
+      // instead of looping back through modelTurn (see finalAnswerOverride
+      // comment above for why we don't let the outer model re-synthesize).
+      if (!error && isCitedAnswer(dispatchResult)) {
+        return {
+          finalAnswerOverride: dispatchResult,
+          toolResult: { toolName: name, result: dispatchResult },
+          proposal: null,
+          pendingToolCall: null,
+        };
+      }
+
       const toolResultMsg: ChatMessage = error
         ? {
             role: 'user',
@@ -173,6 +223,7 @@ export class AgentService {
 
     const routeAfterToolDispatch = (state: AgentStateType): string => {
       if (state.proposal) return 'proposalPending';
+      if (state.finalAnswerOverride) return 'citedAnswer';
       if (state.iterationCount >= maxIter) return 'maxReached';
       return 'loop';
     };
@@ -188,6 +239,7 @@ export class AgentService {
       .addConditionalEdges('toolDispatch', routeAfterToolDispatch, {
         loop: 'modelTurn',
         proposalPending: END,
+        citedAnswer: END,
         maxReached: END,
       })
       .addEdge(START, 'modelTurn')
@@ -198,10 +250,13 @@ export class AgentService {
     let currentIterationCount = 0;
     let lastNode = '';
     let proposalEmitted = false;
+    let citedAnswerEmitted = false;
+    let finalAnswerText: string | null = null;
+    let finalCitations: unknown[] | undefined;
 
     for await (const stepOutput of await graph.stream(
       {
-        messages: [{ role: 'user', content: query }],
+        messages: [...history, { role: 'user', content: query }],
         systemPrompt,
       },
       { streamMode: 'updates' },
@@ -233,6 +288,7 @@ export class AgentService {
             EMBEDDED_TOOL_JSON_RE.test(answer)
               ? "I couldn't complete that request."
               : answer;
+          finalAnswerText = safeAnswer;
           for (const token of safeAnswer.split(' ')) {
             emit({ type: 'token', data: token + ' ' });
           }
@@ -245,6 +301,18 @@ export class AgentService {
           emit({ type: 'confirmation_required', data: update.proposal });
           proposalEmitted = true;
           break;
+        }
+
+        if (update.finalAnswerOverride) {
+          const { answer, citations } = update.finalAnswerOverride;
+          finalAnswerText = answer;
+          finalCitations = citations;
+          emit({ type: 'citations', data: citations });
+          for (const token of answer.split(' ')) {
+            emit({ type: 'token', data: token + ' ' });
+          }
+          citedAnswerEmitted = true;
+          continue; // graph already routed to END; let the stream finish naturally
         }
 
         const tr = update.toolResult;
@@ -265,7 +333,7 @@ export class AgentService {
       }
     }
 
-    if (proposalEmitted) {
+    const emitTurnCompleted = (): void => {
       this.eventEmitter.emit('TurnCompleted', {
         userId,
         queryId,
@@ -276,27 +344,44 @@ export class AgentService {
         cacheFlags: { embeddingHit: false, answerHit: false },
         toolCallAuditIds: [],
       });
+    };
+
+    if (proposalEmitted) {
+      emitTurnCompleted();
+      return;
+    }
+
+    if (citedAnswerEmitted) {
+      if (finalAnswerText !== null) {
+        await this.conversations.appendAssistantMessage(
+          conversationId,
+          finalAnswerText,
+          finalCitations,
+        );
+      }
+      emit({ type: 'done', data: '' });
+      emitTurnCompleted();
       return;
     }
 
     if (lastNode === 'toolDispatch' && currentIterationCount >= maxIter) {
+      await this.conversations.appendAssistantMessage(
+        conversationId,
+        '(reached max tool iterations without a final answer)',
+      );
       emit({ type: 'done', data: 'max_iterations_reached' });
       return;
     }
 
     // Final answer path
+    if (finalAnswerText !== null) {
+      await this.conversations.appendAssistantMessage(
+        conversationId,
+        finalAnswerText,
+      );
+    }
     emit({ type: 'done', data: '' });
-
-    this.eventEmitter.emit('TurnCompleted', {
-      userId,
-      queryId,
-      query,
-      provider: this.provider.model,
-      model: this.provider.model,
-      latencyBreakdown: { total: Date.now() - startMs },
-      cacheFlags: { embeddingHit: false, answerHit: false },
-      toolCallAuditIds: [],
-    });
+    emitTurnCompleted();
   }
 
   // ── Private helpers ─────────────────────────────────────────────

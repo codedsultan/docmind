@@ -3,6 +3,7 @@ import { EventEmitter2 } from '@nestjs/event-emitter';
 import { ConfigService } from '@nestjs/config';
 import { AgentService } from './agent.service';
 import { ToolRegistryService } from '../tools/tool-registry.service';
+import { ConversationsService } from '../conversations/conversations.service';
 import { GENERATION_PROVIDER } from '../providers/generation.provider';
 import { RiskTier } from '../../common/constants';
 import type { AgentSseEvent } from './agent-sse.types';
@@ -28,12 +29,25 @@ function makeRegistry() {
   };
 }
 
-async function buildService(provider: unknown, registry: unknown) {
+function makeConversations() {
+  return {
+    loadHistory: jest.fn().mockResolvedValue([]),
+    appendUserMessage: jest.fn().mockResolvedValue(undefined),
+    appendAssistantMessage: jest.fn().mockResolvedValue(undefined),
+  };
+}
+
+async function buildService(
+  provider: unknown,
+  registry: unknown,
+  conversations: unknown = makeConversations(),
+) {
   const mod = await Test.createTestingModule({
     providers: [
       AgentService,
       { provide: GENERATION_PROVIDER, useValue: provider },
       { provide: ToolRegistryService, useValue: registry },
+      { provide: ConversationsService, useValue: conversations },
       {
         provide: ConfigService,
         useValue: { get: jest.fn().mockReturnValue(undefined) },
@@ -47,9 +61,12 @@ async function buildService(provider: unknown, registry: unknown) {
 function collectEvents(
   service: AgentService,
   query: string,
+  conversationId = 'conv-1',
 ): Promise<AgentSseEvent[]> {
   const events: AgentSseEvent[] = [];
-  return service.run(query, 'user-1', (e) => events.push(e)).then(() => events);
+  return service
+    .run(query, 'user-1', conversationId, (e) => events.push(e))
+    .then(() => events);
 }
 
 describe('AgentService', () => {
@@ -132,6 +149,100 @@ describe('AgentService', () => {
     expect(events.some((e) => e.type === 'done')).toBe(true);
   });
 
+  it('short-circuits on a cited answer: emits citations, no second generate call', async () => {
+    const provider = makeProvider([
+      JSON.stringify({ tool: 'query_documents', params: { query: 'MVCC' } }),
+    ]);
+    const registry = makeRegistry();
+    const citations = [
+      { marker: '[1]', chunkId: 'chunk-1', documentTitle: 'Doc A', snippet: '...' },
+    ];
+    registry.dispatch.mockResolvedValue({
+      answer: 'MVCC avoids locking [1].',
+      citations,
+    });
+    registry.listTools.mockReturnValue([
+      {
+        name: 'query_documents',
+        description: 'Search documents and return an answer with citations',
+        riskTier: RiskTier.read,
+      },
+    ]);
+    const service = await buildService(provider, registry);
+
+    const events = await collectEvents(service, 'How does MVCC work?');
+
+    const citationEvent = events.find((e) => e.type === 'citations');
+    expect(citationEvent).toBeDefined();
+    if (citationEvent?.type === 'citations') {
+      expect(citationEvent.data).toEqual(citations);
+    }
+
+    const tokenContent = events
+      .filter((e) => e.type === 'token')
+      .map((e) => e.data)
+      .join('');
+    expect(tokenContent.trim()).toBe('MVCC avoids locking [1].');
+
+    expect(events.some((e) => e.type === 'done')).toBe(true);
+    // Only one generate() call — the outer model never re-synthesizes
+    // the tool's own answer.
+    expect(provider.generate).toHaveBeenCalledTimes(1);
+  });
+
+  it('seeds prior history into the first generate() call and persists both turns', async () => {
+    const provider = makeProvider(['Sure, following up on that.']);
+    const registry = makeRegistry();
+    const conversations = makeConversations();
+    const priorHistory = [
+      { role: 'user' as const, content: 'What is MVCC?' },
+      { role: 'assistant' as const, content: 'MVCC avoids locking.' },
+    ];
+    conversations.loadHistory.mockResolvedValue(priorHistory);
+    const service = await buildService(provider, registry, conversations);
+
+    await collectEvents(service, 'Tell me more', 'conv-42');
+
+    expect(conversations.loadHistory).toHaveBeenCalledWith('conv-42');
+    // First generate() call must include prior history ahead of the new query
+    const firstCallArgs = provider.generate.mock.calls[0][0];
+    expect(firstCallArgs.messages).toEqual([
+      ...priorHistory,
+      { role: 'user', content: 'Tell me more' },
+    ]);
+
+    // User query persisted immediately, assistant answer persisted at the end
+    expect(conversations.appendUserMessage).toHaveBeenCalledWith(
+      'conv-42',
+      'Tell me more',
+    );
+    expect(conversations.appendAssistantMessage).toHaveBeenCalledWith(
+      'conv-42',
+      'Sure, following up on that.',
+    );
+  });
+
+  it('does not persist an assistant message when the turn pauses on confirmation', async () => {
+    const proposal = {
+      type: 'proposal' as const,
+      toolName: 'send_email',
+      preview: 'Send digest to user@example.com',
+      confirmationToken: 'tok-abc',
+    };
+    const provider = makeProvider([
+      JSON.stringify({ tool: 'send_email', params: { subject: 'Digest' } }),
+    ]);
+    const registry = makeRegistry();
+    registry.dispatch.mockResolvedValue(proposal);
+    const conversations = makeConversations();
+    const service = await buildService(provider, registry, conversations);
+
+    await collectEvents(service, 'Send email digest');
+
+    expect(conversations.appendUserMessage).toHaveBeenCalled();
+    expect(conversations.appendAssistantMessage).not.toHaveBeenCalled();
+  });
+
   it('respects max iterations guard', async () => {
     const provider = makeProvider([
       JSON.stringify({ tool: 'loop_tool', params: {} }),
@@ -144,6 +255,7 @@ describe('AgentService', () => {
         AgentService,
         { provide: GENERATION_PROVIDER, useValue: provider },
         { provide: ToolRegistryService, useValue: registry },
+        { provide: ConversationsService, useValue: makeConversations() },
         {
           provide: ConfigService,
           useValue: { get: jest.fn().mockReturnValue(2) },
