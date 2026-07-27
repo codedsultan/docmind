@@ -60,6 +60,16 @@ model Chunk {
   chunkIndex        Int
   embeddingProvider String   @default("gemini-embedding-001")
   embedding         Unsupported("vector(768)")
+  // Generated column created by hand-written SQL (0007_keyword_search) —
+  // Prisma can't create GENERATED ALWAYS AS columns itself. Declaring it
+  // here as Unsupported only tells Prisma "this column exists, don't try
+  // to drop it" on future `migrate dev` diffs. It does NOT protect the
+  // chunks_content_tsv_idx GIN index, or idx_chunks_embedding_hnsw above —
+  // Prisma cannot represent indexes on Unsupported-typed columns at all.
+  // Always run `prisma migrate dev --create-only` for schema changes and
+  // inspect the generated SQL for an unexpected DROP INDEX/DROP COLUMN on
+  // either of those two objects before applying.
+  contentTsv        Unsupported("tsvector")? @map("content_tsv")
   createdAt         DateTime @default(now())
 
   document Document @relation(fields: [documentId], references: [id])
