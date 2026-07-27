@@ -86,6 +86,7 @@ model User {
   tasks         Task[]
   toolCallAudits ToolCallAudit[]
   queryTraces   QueryTrace[]
+  conversations Conversation[]
 
   @@map("users")
 }
@@ -151,4 +152,44 @@ model QueryTrace {
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@map("query_traces")
+}
+
+// ── Multi-turn agent chat history ───────────────────────────────────
+// Scoped to /v1/agent/chat only (see plan doc). Tool-call/tool-result
+// scaffolding is intentionally NOT persisted here — only user turns and
+// the final assistant answer, so replayed history stays clean. Per-turn
+// tool-call detail is already captured separately in ToolCallAudit.
+
+enum MessageRole {
+  user
+  assistant
+}
+
+model Conversation {
+  id        String   @id @default(uuid())
+  userId    String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user     User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  messages Message[]
+
+  @@index([userId, updatedAt])
+  @@map("conversations")
+}
+
+model Message {
+  id             String      @id @default(uuid())
+  conversationId String
+  role           MessageRole
+  content        String
+  // Present only on assistant messages produced by a citation-bearing
+  // tool result (see agent.service.ts finalAnswerOverride short-circuit).
+  citations      Json?
+  createdAt      DateTime    @default(now())
+
+  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+
+  @@index([conversationId, createdAt])
+  @@map("messages")
 }

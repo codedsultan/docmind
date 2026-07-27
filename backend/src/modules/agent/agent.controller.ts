@@ -27,6 +27,7 @@ import { Observable, Subject } from 'rxjs';
 import type Redis from 'ioredis';
 import { REDIS_CLIENT } from '../../redis/redis.module';
 import { ToolRegistryService } from '../tools/tool-registry.service';
+import { ConversationsService } from '../conversations/conversations.service';
 import { AgentService } from './agent.service';
 import {
   CurrentUser,
@@ -44,6 +45,16 @@ export class AgentChatDto {
   @MinLength(1)
   @MaxLength(5000)
   query!: string;
+
+  @ApiProperty({
+    required: false,
+    description:
+      'Existing conversation to continue. Omit to start a new conversation ' +
+      '— the new id is returned via a conversation_started SSE event.',
+  })
+  @IsOptional()
+  @IsUUID()
+  conversationId?: string;
 }
 
 export class ConfirmDto {
@@ -71,6 +82,7 @@ export class AgentController {
   constructor(
     private readonly agentService: AgentService,
     private readonly toolRegistry: ToolRegistryService,
+    private readonly conversations: ConversationsService,
     @Optional() @Inject(REDIS_CLIENT) private readonly redis: Redis | null,
   ) {}
 
@@ -86,18 +98,40 @@ export class AgentController {
   ): Observable<SseMessage> {
     const subject = new Subject<SseMessage>();
 
-    void this.agentService
-      .run(dto.query, user.sub, (event: AgentSseEvent) => {
-        subject.next({ data: JSON.stringify(event) });
-        if (event.type === 'done' || event.type === 'error') {
-          subject.complete();
+    void (async () => {
+      try {
+        let conversationId = dto.conversationId;
+
+        if (conversationId) {
+          await this.conversations.assertOwnership(user.sub, conversationId);
+        } else {
+          const conversation = await this.conversations.create(user.sub);
+          conversationId = conversation.id;
+          subject.next({
+            data: JSON.stringify({
+              type: 'conversation_started',
+              data: { conversationId },
+            }),
+          });
         }
-      })
-      .catch((err: unknown) => {
+
+        await this.agentService.run(
+          dto.query,
+          user.sub,
+          conversationId,
+          (event: AgentSseEvent) => {
+            subject.next({ data: JSON.stringify(event) });
+            if (event.type === 'done' || event.type === 'error') {
+              subject.complete();
+            }
+          },
+        );
+      } catch (err) {
         const msg = err instanceof Error ? err.message : 'Agent error';
         subject.next({ data: JSON.stringify({ type: 'error', data: msg }) });
         subject.complete();
-      });
+      }
+    })();
 
     return subject.asObservable();
   }
