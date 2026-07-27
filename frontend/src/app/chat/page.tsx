@@ -139,7 +139,7 @@ export default function ChatPage() {
         <div>
           <h1 className="text-2xl font-bold">Chat</h1>
           <p className="text-sm text-gray-500 dark:text-gray-400">
-            Ask questions about your ingested documents. Follow-up questions keep the conversation's context.
+            Ask questions about your ingested documents. Follow-up questions keep the conversation&apos;s context.
           </p>
         </div>
         {messages.length > 0 && (
