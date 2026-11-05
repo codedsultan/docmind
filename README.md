@@ -189,6 +189,10 @@ Three jobs on every push/PR to `main`/`develop`:
 
 ## Author
 
-**Olusegun Ibraheem** — [@codedsultan](https://github.com/codedsultan)
+[@codedsultan](https://github.com/codedsultan)
 
-This project is a public portfolio piece demonstrating agentic RAG with tiered tool enforcement — built as part of my exploration of production-grade AI systems. The architecture, patterns, and code are open for review and discussion; 
+This project is a public portfolio piece demonstrating agentic RAG with tiered tool enforcement — built as part of my exploration of production-grade AI systems. The architecture, patterns, and code are open for review and discussion.
+
+## License
+
+[MIT](./LICENSE)
