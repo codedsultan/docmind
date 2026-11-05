@@ -4,7 +4,9 @@ on:
   workflow_run:
     workflows: ["1. CI Gates"]
     types: [completed]
-    # branches: ["main", "develop"]
+    # Only build after CI on main. Without this filter, every PR's CI run
+    # triggered a build that pushed unmerged code to GHCR.
+    branches: ["main"]
   workflow_dispatch:
     inputs:
       environment:
@@ -28,9 +30,14 @@ jobs:
   build-and-push:
     name: Build & Push Images
     runs-on: ubuntu-latest
+    # `branches` matches the PR's head branch too, so a PR from a branch
+    # named `main` would still match — require a push (i.e. a merge).
     if: |
-      github.event_name == 'workflow_dispatch' || 
-      (github.event.workflow_run.conclusion == 'success' && github.event_name == 'workflow_run')
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'workflow_run' &&
+       github.event.workflow_run.conclusion == 'success' &&
+       github.event.workflow_run.event == 'push' &&
+       github.event.workflow_run.head_branch == 'main')
 
     outputs:
       environment: ${{ steps.env.outputs.environment }}
